@@ -59,6 +59,33 @@ def env_check():
     return {"ffmpeg": ffmpeg_path(), "python": sys.version.split()[0]}
 
 
+def app_version():
+    try:
+        import plistlib
+        exe = os.path.realpath(sys.executable)
+        plist = os.path.join(os.path.dirname(os.path.dirname(exe)), "Info.plist")
+        with open(plist, "rb") as fh:
+            return plistlib.load(fh).get("CFBundleShortVersionString", "?")
+    except Exception:
+        return "dev"
+
+
+def bundle_report(out):
+    """Zip the log, the report and system info (no media, no AAF) for a bug report."""
+    import platform
+    import zipfile
+    dst = os.path.join(out, "aaf2drt_rapport.zip")
+    info = {"app": app_version(), "macos": platform.mac_ver()[0], "machine": platform.machine(),
+            "python": sys.version.split()[0], "ffmpeg": bool(ffmpeg_path())}
+    with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("systeem.json", json.dumps(info, indent=2))
+        for name in ("aaf2drt_log.txt", "aaf2drt_report.json"):
+            p = os.path.join(out, name)
+            if os.path.exists(p):
+                z.write(p, name)
+    return dst
+
+
 def run_engine(params):
     args = ["--engine", "--aaf", params["aaf"], "--out", params["out"],
             "--handles", str(int(params.get("handles", 10)))]
@@ -81,6 +108,11 @@ def run_engine(params):
                 n += 1
                 STATE["progress"] = {"i": n, "n": 0, "file": line.strip()}
     proc.wait()
+    try:   # keep the log next to the output, for bug reports
+        with open(os.path.join(params["out"], "aaf2drt_log.txt"), "w", encoding="utf-8") as fh:
+            fh.write("\n".join(STATE["log"]) + "\n")
+    except OSError:
+        pass
     rep = None
     rp = os.path.join(params["out"], "aaf2drt_report.json")
     if os.path.exists(rp):
@@ -157,6 +189,13 @@ class H(BaseHTTPRequestHandler):
             if path and os.path.exists(path):
                 subprocess.run(["open", "-R", path] if os.path.isfile(path) else ["open", path])
             return self._send(200, {"ok": True})
+        if p == "/bundle":
+            out = body.get("out")
+            if not out or not os.path.isdir(out):
+                return self._send(400, {"error": "geen uitvoermap"})
+            dst = bundle_report(out)
+            subprocess.run(["open", "-R", dst])
+            return self._send(200, {"ok": True, "path": dst})
         if p == "/ping":
             return self._send(200, {"ok": True})
         if p == "/quit":

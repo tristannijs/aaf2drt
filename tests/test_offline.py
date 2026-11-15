@@ -55,6 +55,15 @@ def test_metadata_blob_decodes():
     assert b"A02" in payload and b"x.wav" in payload
 
 
+def test_drop_frame_timecode():
+    assert gen.tc_to_frames("01:00:00;00", 30) == 107892
+    assert gen.tc_to_frames("00:10:00;00", 30) == 17982
+    assert gen.tc_to_frames("00:01:00;02", 30) == 1800
+    assert gen.tc_to_frames("01:00:00;00", 60) == 215784
+    assert gen.tc_to_frames("01:00:00:00", 30) == 108000     # non-drop stays plain
+    assert gen.tc_to_frames("01:00:00:00", 25) == 90000
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

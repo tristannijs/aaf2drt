@@ -409,10 +409,19 @@ def video_codec_label(info):
     return c
 
 
-def tc_to_frames(tc, fps=None):
-    fps = fps or FPS_NOM
-    hh, mm, ss, ff = [int(x) for x in tc.replace(';', ':').split(':')]
-    return ((hh * 60 + mm) * 60 + ss) * fps + ff
+def tc_to_frames(tc, fps=None, drop=None):
+    """Timecode string -> frame count. Drop-frame ("01:00:00;00", 29.97/59.94) skips frame numbers
+    0,1 (or 0-3 at 60) at the start of every minute except every tenth minute."""
+    fps = int(round(fps or FPS_NOM))
+    hh, mm, ss, ff = [int(x) for x in tc.replace(';', ':').replace('.', ':').split(':')]
+    frames = ((hh * 60 + mm) * 60 + ss) * fps + ff
+    if drop is None:
+        drop = (';' in tc or '.' in tc) and fps in (30, 60)
+    if drop:
+        per_min = fps // 15          # 2 at 30, 4 at 60
+        minutes = hh * 60 + mm
+        frames -= per_min * (minutes - minutes // 10)
+    return frames
 
 
 def mp_video_item(folder_id, dirpath, name, info, fps=None):

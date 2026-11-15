@@ -42,12 +42,13 @@ volledige uitvoermap en de beeldmedia.
 
 ## Beperkingen
 
-Nog niet ondersteund of niet getest: 29.97/59.94 drop-frame, 5.1- en andere multikanaalsporen, variabele
+Drop-frame-tijdcode (29.97/59.94) wordt juist gerekend, maar is nog niet met een echte AAF getest. Nog niet ondersteund
+of niet getest: 5.1- en andere multikanaalsporen, variabele
 snelheid (timewarp met keyframes), reverse en freeze frames, AMA-gelinkte media (.mov, BRAW, R3D), genestte
 sequences en multicam, crop en positie Y, titels en kleureffecten. Getest met DaVinci Resolve Studio 21.1.
 
-Werkt iets niet? Open een [issue](../../issues) en voeg `aaf2drt_report.json` en het logboek uit de app toe.
-Die bevatten bestandsnamen en tijdcodes, geen media.
+Werkt iets niet? Klik in de app op **Rapport opslaan** en voeg `aaf2drt_rapport.zip` toe aan een
+[issue](../../issues). Die bevat het logboek en het rapport (bestandsnamen en tijdcodes), geen media en geen AAF.
 
 ## Ontwikkelen
 

@@ -89,5 +89,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" \
+          PRE=""; [[ "$GITHUB_REF_NAME" == *-* ]] && PRE="--prerelease"   # v1.5-beta.1 = test version
+          gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" $PRE \
             --title "AAF naar Resolve $GITHUB_REF_NAME" --generate-notes
