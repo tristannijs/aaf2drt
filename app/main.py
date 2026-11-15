@@ -24,8 +24,19 @@ def _engine(argv):
     aaf2drt.main()
 
 
+def _selftest():
+    """Used by the build: the bundled data files load and a mixer model can be made."""
+    import aaf2drt, flmodel, gen
+    gen.Template(os.path.join(aaf2drt.RES, "template.drt"))
+    assert len(flmodel.raw_model("ms")) > 300000
+    import aaf2, numpy, zstandard, imageio_ffmpeg  # noqa: F401
+    print("selftest ok", imageio_ffmpeg.get_ffmpeg_exe())
+
+
 if __name__ == "__main__":
-    if "--engine" in sys.argv:
+    if "--selftest" in sys.argv:
+        _selftest()
+    elif "--engine" in sys.argv:
         _engine(sys.argv[sys.argv.index("--engine") + 1:])
     else:
         import server

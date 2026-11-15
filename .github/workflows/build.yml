@@ -65,8 +65,7 @@ jobs:
         run: |
           BIN="dist/AAF naar Resolve.app/Contents/MacOS/AAF naar Resolve"
           "$BIN" --engine --help
-          FF=$("dist/AAF naar Resolve.app/Contents/MacOS/AAF naar Resolve" --engine --help >/dev/null && find "dist/AAF naar Resolve.app" -name "ffmpeg-*" -type f | head -1)
-          test -n "$FF" && "$FF" -version | head -1
+          "$BIN" --selftest
       - name: Zip
         run: |
           ditto -c -k --sequesterRsrc --keepParent "dist/AAF naar Resolve.app" "AAF-naar-Resolve-${VERSION}-macOS-${{ matrix.arch }}.zip"
