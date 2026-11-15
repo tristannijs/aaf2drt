@@ -1,0 +1,18 @@
+# Never commit project material: AAFs, timelines, media, reports
+*.aaf
+*.drt
+!engine/template.drt
+*.wav
+*.mxf
+*.mov
+*.mp4
+aaf2drt_report.json
+Audio/
+
+# build output
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+.DS_Store

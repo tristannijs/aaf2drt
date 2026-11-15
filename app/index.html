@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>AAF → Resolve</title>
+<style>
+  :root{--bg:#141414;--panel:#1c1c1c;--line:#2c2c2c;--text:#e8e6e1;--dim:#8d8a84;--accent:#e0a44a;--ok:#7fb77e;--bad:#d06a5a;--mono:ui-monospace,"SF Mono",Menlo,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
+  main{max-width:900px;margin:0 auto;padding:36px 28px 80px}
+  header{display:flex;align-items:baseline;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:26px}
+  h1{font-size:19px;font-weight:600;margin:0} h1 span{color:var(--accent)}
+  .sub{color:var(--dim);font-size:12.5px} .env{font-size:12px;color:var(--dim)} .env .bad{color:var(--bad)}
+  .row{display:grid;grid-template-columns:28px 170px 1fr auto;gap:12px;align-items:start;padding:13px 0;border-bottom:1px solid var(--line)}
+  .num{font-family:var(--mono);color:var(--accent);font-size:12px;padding-top:7px}
+  .label{padding-top:6px} .label small{display:block;color:var(--dim);font-size:11.5px;margin-top:2px}
+  .path{font-family:var(--mono);font-size:12.5px;background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:7px 10px;min-height:33px;word-break:break-all}
+  .path.empty{color:#5d5b57}
+  input[type=number]{background:var(--panel);border:1px solid var(--line);border-radius:5px;color:var(--text);font:inherit;padding:6px 8px;width:80px}
+  button.b{background:#262626;color:var(--text);border:1px solid #383838;border-radius:5px;padding:7px 13px;font:inherit;font-size:13px;cursor:pointer;white-space:nowrap}
+  button.b:hover{border-color:#555} button.primary{background:var(--accent);border-color:var(--accent);color:#1a1408;font-weight:600}
+  button:disabled{opacity:.4;cursor:default}
+  .actions{display:flex;gap:10px;margin:26px 0 8px;align-items:center}
+  .hint{color:var(--dim);font-size:12.5px;margin-left:6px}
+  .bar{height:3px;background:var(--line);border-radius:2px;overflow:hidden;margin:18px 0 6px;display:none}
+  .bar i{display:block;height:100%;width:30%;background:var(--accent);animation:slide 1.2s infinite ease-in-out}
+  @keyframes slide{0%{margin-left:-30%}100%{margin-left:100%}}
+  .pfile{font-family:var(--mono);font-size:12px;color:var(--dim);min-height:18px}
+  .summary{display:none;margin-top:22px;padding:16px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+  .summary .big{font-size:15px;margin-bottom:8px} .summary ol{margin:10px 0 0 18px;padding:0;color:var(--dim)} .summary li{margin:3px 0}
+  .summary .next{margin-top:14px;display:flex;gap:8px}
+  .msg.err{color:var(--bad)}
+  details{margin-top:24px} summary{cursor:pointer;color:var(--dim);font-size:12.5px}
+  pre{font-family:var(--mono);font-size:11.5px;background:#0f0f0f;border:1px solid var(--line);border-radius:5px;padding:10px;max-height:320px;overflow:auto;white-space:pre-wrap;color:#b9b6af}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>AAF → <span>Resolve</span></h1>
+      <div class="sub">Avid link-to-AAF + OP-Atom → getrimde poly-WAV's + DaVinci Resolve-timeline (.drt)</div></div>
+    <div class="env" id="env">…</div>
+  </header>
+
+  <div class="row">
+    <div class="num">01</div>
+    <div class="label">AAF<small>export met "Link to" (geen consolidate nodig)</small></div>
+    <div><div class="path empty" id="aaf">nog niet gekozen</div></div>
+    <div><button class="b" onclick="pickAaf()">Kies…</button></div>
+  </div>
+  <div class="row">
+    <div class="num">02</div>
+    <div class="label">Uitvoermap<small>hier komen de WAV's en de .drt</small></div>
+    <div><div class="path empty" id="out">nog niet gekozen</div></div>
+    <div><button class="b" onclick="pickOut()">Kies…</button></div>
+  </div>
+  <div class="row">
+    <div class="num">03</div>
+    <div class="label">Handles<small>frames voor en na elke clip</small></div>
+    <div><input type="number" id="handles" value="10" min="0" max="250"></div>
+    <div></div>
+  </div>
+
+  <div class="actions">
+    <button class="b primary" id="bRun" onclick="run()">Omzetten</button>
+    <span class="hint">Alle iso-kanalen per clip, kanaalkeuze uit je montage, gain, volume, pan, zoom, snelheid en overgangen.</span>
+  </div>
+  <div class="bar" id="bar"><i></i></div>
+  <div class="pfile" id="pfile"></div>
+  <div class="summary" id="summary"></div>
+  <details id="logbox"><summary>Logboek</summary><pre id="log"></pre></details>
+</main>
+<script>
+const TOKEN="__TOKEN__"; const S={aaf:null,out:null}; let logN=0, poll=null;
+async function api(p,b={}){const r=await fetch(p,{method:"POST",headers:{"X-Token":TOKEN,"Content-Type":"application/json"},body:JSON.stringify(b)});return r.json();}
+function setPath(id,v){const e=document.getElementById(id);e.textContent=v||"nog niet gekozen";e.classList.toggle("empty",!v);}
+async function pickAaf(){const r=await api("/pick",{kind:"file",prompt:"Kies de AAF (Link to)"}); if(!r.path)return; S.aaf=r.path; setPath("aaf",r.path);
+  if(!S.out){const base=r.path.replace(/\.aaf$/i,""); S.out=base+"_Resolve"; setPath("out",S.out);} }
+async function pickOut(){const start=S.aaf?S.aaf.replace(/\/[^\/]+$/,""):null; const r=await api("/pick",{kind:"folder",prompt:"Kies of maak een uitvoermap",start}); if(r.path){S.out=r.path;setPath("out",r.path);} }
+async function run(){
+  if(!S.aaf||!S.out) return alert("Kies eerst een AAF en een uitvoermap.");
+  const r=await api("/run",{aaf:S.aaf,out:S.out,handles:document.getElementById("handles").value});
+  if(r.error) return alert(r.error);
+  logN=0; document.getElementById("log").textContent=""; document.getElementById("summary").style.display="none";
+  document.getElementById("bRun").disabled=true; document.getElementById("bar").style.display="block";
+  document.getElementById("pfile").textContent="AAF lezen…"; poll=setInterval(tick,500);
+}
+async function tick(){
+  const s=await api("/status",{since:logN});
+  if(s.log.length){const pre=document.getElementById("log"); pre.textContent+=s.log.join("\n")+"\n"; pre.scrollTop=pre.scrollHeight; logN=s.n;
+    const last=s.log[s.log.length-1]; document.getElementById("pfile").textContent=last.trim().slice(0,110);}
+  if(s.done){clearInterval(poll); document.getElementById("bRun").disabled=false; document.getElementById("bar").style.display="none"; document.getElementById("pfile").textContent=""; show(s);}
+}
+function show(s){
+  const box=document.getElementById("summary"); box.style.display="block";
+  const rows=(s.report&&s.report.rows)||[]; const drt=(s.report&&s.report.drt)||[];
+  if(s.returncode!==0||!drt.length){box.innerHTML='<div class="big msg err">Er ging iets mis. Kijk in het logboek.</div>'; document.getElementById("logbox").open=true; return;}
+  const ok=rows.filter(r=>r.status==="ok").length, bad=rows.length-ok;
+  const files=new Set(rows.filter(r=>r.file&&r.status==="ok").map(r=>r.file)).size;
+  box.innerHTML=`<div class="big">Klaar: <b>${ok}</b> audioclips in <b>${files}</b> poly-WAV's`+(bad?`, <span class="msg err">${bad} niet gevonden</span>`:"")+`.</div>
+   <div>Timeline: <code>${drt[0]}</code></div>
+   <ol><li>Open of maak een project in DaVinci Resolve, met dezelfde framerate als je Avid-sequence.</li><li>Bestand &gt; Importeren &gt; Timeline… en kies de .drt hierboven.</li>
+   <li>Geef je mixer de hele uitvoermap (de .drt + de map <code>Audio</code>), plus je video-media.</li></ol>
+   <div class="next"><button class="b" onclick="api('/reveal',{path:S.out})">Toon in Finder</button></div>`;
+}
+(async()=>{const e=await api("/env"); document.getElementById("env").innerHTML=e.ffmpeg?`ffmpeg ✓ · Python ${e.python}`:`<span class="bad">ffmpeg niet gevonden</span>`;})();
+setInterval(()=>api("/ping"),20000);
+</script>
+</body>
+</html>

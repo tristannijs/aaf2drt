@@ -1,0 +1,94 @@
+name: Build app
+
+# Builds the self-contained macOS app (Python, libraries and ffmpeg inside) on GitHub's own Macs.
+# Every push builds and tests; pushing a tag like v1.5 also publishes a release with the zips.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python tests/test_offline.py
+
+  macos:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14          # Apple Silicon (M1 and later)
+            arch: AppleSilicon
+          - runner: macos-15-intel    # Intel Macs
+            arch: Intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -r requirements.txt pyinstaller
+      - name: Version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF#refs/tags/v}"; else V="0.0.0-dev"; fi
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+      - name: Build app
+        run: |
+          pyinstaller --noconfirm --clean --windowed \
+            --name "AAF naar Resolve" \
+            --osx-bundle-identifier be.tristannijs.aaf2drt \
+            --paths engine --paths app \
+            --hidden-import aaf2drt --hidden-import server \
+            --add-data "engine/template.drt:." \
+            --add-data "engine/fl_base.json:." \
+            --add-data "app/index.html:." \
+            --collect-all imageio_ffmpeg \
+            app/main.py
+          APP="dist/AAF naar Resolve.app"
+          plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
+          plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
+          codesign --force --deep --sign - "$APP"     # ad-hoc signature (not notarized)
+      - name: Smoke test the built app
+        run: |
+          BIN="dist/AAF naar Resolve.app/Contents/MacOS/AAF naar Resolve"
+          "$BIN" --engine --help
+          FF=$("dist/AAF naar Resolve.app/Contents/MacOS/AAF naar Resolve" --engine --help >/dev/null && find "dist/AAF naar Resolve.app" -name "ffmpeg-*" -type f | head -1)
+          test -n "$FF" && "$FF" -version | head -1
+      - name: Zip
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent "dist/AAF naar Resolve.app" "AAF-naar-Resolve-${VERSION}-macOS-${{ matrix.arch }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.arch }}
+          path: "*.zip"
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" \
+            --title "AAF naar Resolve $GITHUB_REF_NAME" --generate-notes
