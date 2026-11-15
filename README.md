@@ -61,7 +61,8 @@ python tests/test_offline.py
 
 `engine/` bevat de omzetter: `aafmodel.py` leest de AAF, `polyplan.py` stelt de takes samen uit de MXF's, `gen.py`
 schrijft de Resolve-XML, `flmodel.py` maakt de Fairlight-mixer, `codec.py` en `drtio.py` lezen en schrijven het
-.drt-formaat. `app/` is de lokale interface. Een nieuwe versie uitbrengen: tag `vX.Y` pushen. GitHub Actions bouwt
-dan beide Mac-versies en zet ze in Releases.
+.drt-formaat. `app/` is de lokale interface. Een nieuwe versie uitbrengen: zet het nummer in `VERSION` en push naar main. GitHub
+Actions bouwt dan beide Mac-versies en zet ze in Releases (een nummer met een streepje, zoals `1.6-beta.1`, wordt een
+testversie).
 
 Licentie: MIT. Zie [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) voor de meegeleverde onderdelen.

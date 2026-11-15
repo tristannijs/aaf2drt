@@ -1,7 +1,8 @@
 name: Build app
 
 # Builds the self-contained macOS app (Python, libraries and ffmpeg inside) on GitHub's own Macs.
-# Every push builds and tests; pushing a tag like v1.5 also publishes a release with the zips.
+# Every push builds and tests. A push to main whose VERSION file names a version without a release yet
+# publishes that release (tag v<VERSION>) with both zips. A version with a dash (1.5-beta.1) is a pre-release.
 on:
   push:
     branches: [main]
@@ -43,8 +44,7 @@ jobs:
         run: pip install -r requirements.txt pyinstaller
       - name: Version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF#refs/tags/v}"; else V="0.0.0-dev"; fi
-          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "VERSION=$(tr -d ' \n' < VERSION)" >> "$GITHUB_ENV"
       - name: Build app
         run: |
           pyinstaller --noconfirm --clean --windowed \
@@ -75,20 +75,25 @@ jobs:
           path: "*.zip"
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: macos
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-      - name: Publish release
+      - name: Publish release (once per VERSION)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          PRE=""; [[ "$GITHUB_REF_NAME" == *-* ]] && PRE="--prerelease"   # v1.5-beta.1 = test version
-          gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" $PRE \
-            --title "AAF naar Resolve $GITHUB_REF_NAME" --generate-notes
+          V=$(tr -d ' \n' < VERSION); TAG="v$V"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG bestaat al, niets te doen."; exit 0
+          fi
+          PRE=""; [[ "$V" == *-* ]] && PRE="--prerelease"
+          gh release create "$TAG" dist/*.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $PRE \
+            --title "AAF naar Resolve $TAG" --generate-notes
