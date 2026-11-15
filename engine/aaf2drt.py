@@ -238,7 +238,7 @@ def main():
                     base = re.sub(r'[^\w\-]+', '_', (plan['master'] or plan['tape'] or 'clip'))
                     counter[base] = counter.get(base, 0) + 1
                     fn = '%s_%03d.wav' % (base, counter[base])
-                    names = ['A%02d' % c['ptn'] if c['ptn'] else 'CH%d' % (k + 1) for k, c in enumerate(plan['channels'])]
+                    names = [c.get('name') or 'CH%d' % (k + 1) for k, c in enumerate(plan['channels'])]
                     outp = os.path.join(audio_dir, fn)
                     expected = 44 + 610 + 8 + len(ixml(names)) + 8 + 16 + n * len(plan['channels']) * (bits // 8)
                     if not args.plan_only and not (os.path.exists(outp) and abs(os.path.getsize(outp) - expected) < 64):

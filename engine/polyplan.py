@@ -38,6 +38,32 @@ def master_of(chain):
     return None, None, None
 
 
+def track_names(mob):
+    """Recorder track names Avid keeps in the bin columns TRK1, TRK2, ... (from the BWF/iXML at import)."""
+    names = {}
+    if mob is None:
+        return names
+    try:
+        comments = mob.get('UserComments') or []
+    except Exception:
+        comments = []
+    for t in comments:
+        try:
+            k, v = t.name, t.value
+        except Exception:
+            continue
+        if isinstance(k, str) and k.upper().startswith('TRK') and k[3:].isdigit() and isinstance(v, str) and v.strip():
+            names[int(k[3:])] = v.strip()
+    return names
+
+
+def channel_name(c, names):
+    """TRK name from the bin (e.g. 'TrkC'), else Avid's channel label (A05)."""
+    if c.get('ptn') and c['ptn'] in names:
+        return names[c['ptn']]
+    return 'A%02d' % c['ptn'] if c.get('ptn') else None
+
+
 def channels_of_master(master):
     """All sound channels of a master clip: list of dict(slot, file_mob, path, ptn, tape_start, file_rate)."""
     out = []
@@ -108,8 +134,13 @@ def plan_clip(sourceclips, length_frames, fps=24):
     plan = {'master': master.name if master is not None else None, 'tape': pick['tape'],
             'stereo': stereo, 'pick_index': pick_idx, 'tape_seg_start': pick['tape_start'] + seg_start,
             'seg_dur': seg_end - seg_start, 'head': head, 'channels': []}
+    names = track_names(master)
+    for _, _, m_, _, _ in picks[1:]:
+        for k, v in track_names(m_).items():
+            names.setdefault(k, v)
     for c in chans:
         # where does this channel's file have the same tape position?
         fpos = (pick['tape_start'] + seg_start) - c['tape_start']
-        plan['channels'].append({'path': c['path'], 'ptn': c['ptn'], 'file_offset': fpos})
+        plan['channels'].append({'path': c['path'], 'ptn': c['ptn'], 'file_offset': fpos,
+                                 'name': channel_name(c, names)})
     return plan
