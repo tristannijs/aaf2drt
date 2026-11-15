@@ -7,7 +7,7 @@ aaf2drt: Avid link-to AAF + OP-Atom MXF  ->  trimmed poly-WAVs + DaVinci Resolve
 Output folder: <out>/Audio/*.wav (one poly-WAV per timeline clip, all iso channels, handles)
                <out>/<sequence>.drt
 """
-import argparse, json, os, re, struct, subprocess, sys, datetime
+import argparse, json, math, os, re, struct, subprocess, sys, datetime
 from fractions import Fraction
 import numpy as np
 
@@ -162,9 +162,48 @@ def eq3_to_resolve(eq, notes):
             {'on': on(7), 'freq': eq.get('d_frq7')}]
 
 
+# D-Verb room -> Fairlight room (length, width, height in m); Fairlight allows L 3-30, W 4-40, H 2-10
+DVERB_ROOMS = {'Hall': [(15, 12, 6), (22, 17, 8), (30, 24, 10)],
+               'Church': [(18, 12, 8), (24, 16, 10), (30, 20, 10)],
+               'Plate': [(6, 5, 3), (8, 6, 3), (10, 8, 4)],
+               'Room 1': [(5, 4, 2.7), (8, 6, 3), (12, 9, 4)],
+               'Room 2': [(4, 4, 2.5), (6, 5, 3), (9, 7, 3.5)],
+               'Ambient': [(4, 4, 2.5), (6, 5, 3), (8, 7, 3)],
+               'Non-Lin': [(4, 4, 2.5), (6, 5, 3), (9, 7, 3.5)]}
+FL_PREDELAY = [(0, 0.5), (10, 0.6), (27, 0.75), (55, 0.9), (200, 1.0)]   # ms -> v (positive half)
+
+
+def dverb_to_fairlight(d, notes):
+    """D-Verb settings -> Fairlight Reverb normalized parameters (an approximation: different reverbs)."""
+    lg = lambda v, lo, r: math.log(max(v, lo) / lo) / math.log(r)
+    L, W, H = DVERB_ROOMS[d['algo']][['Small', 'Medium', 'Large'].index(d['size'])]
+    dec = d['decay']
+    if dec > 4.0:
+        notes.append('D-Verb decay %s ingekort tot 4 s (maximum van Fairlight Reverb)'
+                     % ('oneindig' if dec == float('inf') else '%.1f s' % dec))
+        dec = 4.0
+    if d['algo'] == 'Non-Lin':
+        notes.append('D-Verb Non-Lin benaderd met een gewone galm')
+    pd = min(d['predelay'], 200.0)
+    for (a, va), (b, vb) in zip(FL_PREDELAY, FL_PREDELAY[1:]):
+        if pd <= b:
+            pdv = va + (vb - va) * (pd - a) / (b - a); break
+    cut = min(d['hf_cut'], d['lp'] or 20000.0)
+    hi_f = lg(min(cut, 16000.0), 1000.0, 16.0)
+    if cut >= 15000:
+        hi_g = 0.75                                   # 0 dB: no damping
+    else:
+        hi_g = 0.0 if d['lp'] and d['lp'] <= d['hf_cut'] else 0.25   # LP: -18 dB, HF cut: -12 dB
+    return {'Room Height': lg(H, 2, 5), 'Room Length': lg(L, 3, 10), 'Room Width': lg(W, 4, 10),
+            'Room Size': lg(L * W, 12, 100), 'Pre-Delay': pdv, 'T@-60dB': lg(dec * 1000, 100, 40),
+            'Dry/Wet': d['mix'] / 100.0,
+            'Early Refl. high Freq': hi_f, 'Late Rev. high Freq': hi_f,
+            'Early Refl. high Gain': hi_g, 'Late Rev. high Gain': hi_g}
+
+
 def clip_plugins(ops, notes):
-    """Real-time AudioSuite plugins on a clip -> (extra dB, clip EQ bands or None)."""
-    extra_db, bands = 0.0, None
+    """Real-time AudioSuite plugins on a clip -> (extra dB, clip EQ bands or None, Fairlight reverb or None)."""
+    extra_db, bands, reverb = 0.0, None, None
     for o in ops or []:
         if o.get('op') != 'Audio Suite Plugin':
             continue
@@ -173,16 +212,24 @@ def clip_plugins(ops, notes):
             eq = aafmodel.eq3_bands(o['_AUDIO_SUITE_EFFECT_0_ALL_CHUNKS'])
             bands = eq3_to_resolve(eq, notes)
             extra_db += eq.get('d_inpt', 0.0) + eq.get('d_outp', 0.0)
+        elif name == 'D-Verb' and o.get('_AUDIO_SUITE_EFFECT_0_ALL_CHUNKS') and reverb is None:
+            d = aafmodel.dverb_params(o['_AUDIO_SUITE_EFFECT_0_ALL_CHUNKS'])
+            if d is None:
+                notes.append('D-Verb: instellingen onleesbaar'); continue
+            reverb = dverb_to_fairlight(d, notes)
+            extra_db += d['input_db']
+            notes.append('D-Verb %s %s, decay %.2f s, mix %d%% -> Fairlight Reverb'
+                         % (d['algo'], d['size'], min(d['decay'], 99), round(d['mix'])))
         elif name:
             notes.append('plugin niet vertaald: %s' % name)
-    return extra_db, bands
+    return extra_db, bands, reverb
 
 
 def audio_effects(it, plan, pan_pts, notes=None):
     """Clip gain (constant + Avid volume keyframes), track pan and clip EQ -> EffectFiltersBA hex."""
     notes = [] if notes is None else notes
     db, kf = aafmodel.gain_db(it['ops'])
-    plug_db, eq_bands = clip_plugins(it['ops'], notes)
+    plug_db, eq_bands, reverb = clip_plugins(it['ops'], notes)
     db += plug_db
     head = float(plan['head']) * FPS             # file frame at the (untrimmed) clip start
     L = it['length']
@@ -209,7 +256,8 @@ def audio_effects(it, plan, pan_pts, notes=None):
             if not groups: groups.append((124, [], 5))
             groups.append((144, [(96, gen.keyframe_bytes_generic(pts))], 1))
     extra = gen.clip_eq_effects(eq_bands) if eq_bands else None
-    return gen.effect_blob(groups, extra) if (groups or extra) else None
+    clipfx = gen.clip_fx_reverb(reverb) if reverb else None
+    return (gen.effect_blob(groups, extra) if (groups or extra) else None), clipfx
 
 
 # ---------------------------------------------------------------- main
@@ -296,12 +344,12 @@ def main():
                 stereo = plan['stereo'] and stereo_track
                 codes = gen.channel_code(info['ch'], plan['pick_index'] + 1, stereo=stereo)
                 notes = []
-                effects_hex = audio_effects(it, plan, pan_pts, notes)
+                effects_hex, clipfx = audio_effects(it, plan, pan_pts, notes)
                 c = dict(start=tc + it['r_start'], duration=it['r_length'], **{'in': inn},
                          name=(it['clips'][0].mob.name if it['clips'][0].mob is not None else fn),
                          media_ref=iid, media_start=info['start'], path=macp(os.path.join(audio_dir, fn)), reel=plan['tape'],
                          media_frames=int(round(info['frames'] / info['sr'] * FPS)), codes=codes, stereo=stereo,
-                         effects_hex=effects_hex)
+                         effects_hex=effects_hex, clipfx=clipfx)
                 xml.append(gen.ti_audio_clip(c))
                 report.append({'track': t['name'], 'start': tc + it['r_start'], 'file': fn,
                                'channel': plan['pick_index'] + 1, 'channels': info['ch'], 'status': 'ok',

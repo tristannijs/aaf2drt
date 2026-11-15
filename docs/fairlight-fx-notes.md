@@ -41,4 +41,26 @@ Gemeten in Resolve 21.1 met v = 0, 0.1, 0.25, 0.4, 0.75, 1 (en standaardwaarden)
   big-endian double (d_) of long (l_). Volledig leesbaar.
 - Track-effecten: OperationGroup `Audio Track Effect Container` rond het spoor, met daarin per plugin een
   OperationGroup en `_ATN_AUDIO_RTAS_EFFECT_CHUNK`.
-- D-Verb: tien 32-bit waarden zonder namen; schaal nog niet bepaald (twee metingen).
+- D-Verb (clip, real-time AudioSuite): na `igiDbrvR` en de presetnaam, vanaf byte 56, tien big-endian int32's.
+  Elk is een knopstand -1..1 (waarde / 2^31); hieronder x = (stand + 1) / 2, dus 0..1. Geijkt met zes exports
+  en het aflezen van het dialoogvenster. Let op: Avid bewaart de instellingen pas na **OK** in het venster.
+
+| # | Knop | x → waarde |
+|---|---|---|
+| 1 | Algorithm | round(6x): Hall, Church, Plate, Room 1, Room 2, Ambient, Non-Lin |
+| 2 | Size | round(2x): Small, Medium, Large |
+| 3 | Input | lineaire versterking: 20·log10(x) dB |
+| 4 | Mix | 100·x % |
+| 5 | Diffusion | 100·x % |
+| 6 | Decay | min · f(x), min per algoritme (Small: Hall/Church 200 ms, Plate/Room 101 ms, Ambient 51 ms, Non-Lin 101 ms; Medium ×1.5, Large ×2). Hall/Church/Plate/Room: f ≈ e^(4.7x), x=1 → Inf (benadering, ±30 %). Ambient: 10^(x^0.9), max 10× min. Non-Lin: 2.5^(x^0.9) |
+| 7 | HF Cut | 200 + 19800·x Hz |
+| 8 | LP Filter | 200 + 19800·x Hz, x = 1 → Off |
+| 9 | Pre-Delay | x ≤ 0.5: 100·x ms, daarboven 50 + 500·(x − 0.5) ms (max 300) |
+| 10 | — | altijd 0 (stand 0.5) |
+
+- Vertaling naar Fairlight Reverb (clip-FX): decay → T@-60dB (max 4 s), pre-delay → Pre-Delay (max 200 ms),
+  mix → Dry/Wet, algoritme + grootte → kamerafmetingen (tabel in `aaf2drt.py`), laagste van HF Cut en LP →
+  high Freq van early/late (−12 dB bij HF Cut, −18 dB bij LP), input → clipvolume. Diffusion heeft geen
+  equivalent. Resolve herberekent Room Size en Room Ratio uit de afmetingen.
+- D-Verb op een **spoor** (Audio Track Effect Container) wordt nog niet vertaald: daarvoor moeten de inserts in
+  `FLStudioModelBA` ontcijferd worden.

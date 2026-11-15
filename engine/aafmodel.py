@@ -1,5 +1,5 @@
 """Flatten an Avid AAF composition into a timeline model (tracks -> items) with resolved media."""
-import aaf2, urllib.parse
+import aaf2, math, urllib.parse
 from fractions import Fraction
 
 
@@ -121,6 +121,36 @@ def eq3_bands(chunk):
         else:
             out[name] = _st.unpack('>i', b[i + 8:i + 12])[0]; i += 12
     return out
+
+
+DVERB_ALGOS = ['Hall', 'Church', 'Plate', 'Room 1', 'Room 2', 'Ambient', 'Non-Lin']
+DVERB_SIZES = ['Small', 'Medium', 'Large']
+
+
+def dverb_params(chunk):
+    """Avid D-Verb AudioSuite chunk -> settings. Ten big-endian int32 knob values from offset 56, each a
+    position -1..1 (int / 2^31). Calibrated with six exports plus reading the dialog:
+    algorithm, size, input, mix, diffusion, decay, HF cut, LP filter, pre-delay, (unused)."""
+    import struct as _st
+    b = bytes(chunk)
+    if len(b) < 96 or b[8:16] != b'igiDbrvR':
+        return None
+    x = [(_st.unpack('>i', b[56 + 4 * k:60 + 4 * k])[0] / 2 ** 31 + 1) / 2 for k in range(10)]
+    algo = min(6, max(0, int(round(x[0] * 6))))
+    size = min(2, max(0, int(round(x[1] * 2))))
+    pd = x[8] * 100 if x[8] <= 0.5 else 50 + (x[8] - 0.5) * 500
+    base = [0.2, 0.2, 0.101, 0.101, 0.101, 0.051, 0.101][algo] * (1, 1.5, 2)[size]
+    if algo == 5:                                   # Ambient: min .. 10x min
+        decay = base * 10 ** (x[5] ** 0.9)
+    elif algo == 6:                                 # Non-Lin: min .. 2.5x min
+        decay = base * 2.5 ** (x[5] ** 0.9)
+    else:                                           # Hall, Church, Plate, Rooms: min .. infinite
+        decay = float('inf') if x[5] >= 0.999 else base * math.exp(4.7 * x[5])
+    lp = 200 + 19800 * x[7]
+    return {'algo': DVERB_ALGOS[algo], 'size': DVERB_SIZES[size],
+            'input_db': 20 * math.log10(x[2]) if x[2] > 1e-6 else -144.0,
+            'mix': x[3] * 100, 'diffusion': x[4] * 100, 'decay': decay,
+            'hf_cut': 200 + 19800 * x[6], 'lp': None if x[7] >= 0.999 else lp, 'predelay': pd}
 
 
 def flatten(seg, pos, ops, items, rate):

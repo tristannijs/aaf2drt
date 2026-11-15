@@ -54,6 +54,7 @@ jobs:
             --hidden-import aaf2drt --hidden-import server \
             --add-data "engine/template.drt:." \
             --add-data "engine/fl_base.json:." \
+            --add-data "engine/fl_reverb.bin:." \
             --add-data "app/index.html:." \
             --collect-all imageio_ffmpeg \
             --collect-all webview \

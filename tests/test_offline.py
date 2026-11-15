@@ -69,3 +69,27 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
             print("ok", name)
+
+
+def test_dverb_params():
+    import aafmodel
+    head = bytes.fromhex('60000000010000006967694462727652') + bytes(40)
+    # round 4: Room 2, Medium, -19.9 dB, mix 0 %, diffusion 20 %, HF 19.95 kHz, LP 200 Hz, pre-delay 300 ms
+    d = aafmodel.dverb_params(head + bytes.fromhex('2aaaaaaa0000000099fe898e80000000b3d70a3e6147ae147f5c28f5800000007fffffff00000000'))
+    assert d['algo'] == 'Room 2' and d['size'] == 'Medium'
+    assert abs(d['input_db'] + 19.9) < 0.2 and d['mix'] < 0.5 and abs(d['diffusion'] - 20) < 0.5
+    assert abs(d['hf_cut'] - 19950) < 10 and abs(d['lp'] - 200) < 1 and abs(d['predelay'] - 300) < 0.5
+    # Dog Bark: Ambient, Large, 490 ms, mix 66 %
+    d = aafmodel.dverb_params(head + bytes.fromhex('555555547fffffff2100000028ba2e8bd080ce1728f5c28f800000008000000080000000' + '00000000'))
+    assert d['algo'] == 'Ambient' and d['size'] == 'Large' and abs(d['decay'] - 0.49) < 0.05 and abs(d['mix'] - 66) < 1
+
+
+def test_clip_fx_reverb_roundtrip():
+    import gen, zlib, struct
+    blk = gen.clip_fx_reverb({'Dry/Wet': 0.25, 'T@-60dB': 0.5})
+    raw = zlib.decompress(blk[4:])
+    assert struct.unpack('>I', blk[:4])[0] == len(raw) and b'bmd:Reverb' in raw
+    o, vals = 516, {}
+    while raw[o:o + 64].split(b'\0')[0]:
+        vals[raw[o:o + 64].split(b'\0')[0].decode()] = struct.unpack('<f', raw[o + 64:o + 68])[0]; o += 68
+    assert abs(vals['Dry/Wet'] - 0.25) < 1e-6 and abs(vals['T@-60dB'] - 0.5) < 1e-6

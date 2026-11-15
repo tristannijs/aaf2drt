@@ -29,6 +29,7 @@ def _selftest():
     import aaf2drt, flmodel, gen
     gen.Template(os.path.join(aaf2drt.RES, "template.drt"))
     assert len(flmodel.raw_model("ms")) > 300000
+    assert len(gen.clip_fx_reverb({"Dry/Wet": 0.5})) > 100
     import aaf2, numpy, zstandard, imageio_ffmpeg  # noqa: F401
     if sys.platform == "darwin":
         import webview  # noqa: F401  (own app window)

@@ -136,10 +136,33 @@ def vat_blob(codes, mono=True):
     return qtb([qb('ChannelsBA', body), [ 'AudioType', [codec.QT_INT, 0, 1 if mono else 0]]]).hex()
 
 
-def ti_fields(start, link=None):
+def _res(name):
+    import os, sys
+    return os.path.join(getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__))), name)
+
+
+def clip_fx_reverb(values):
+    """Fairlight Reverb as clip FX: the stored plugin state (fl_reverb.bin, from Resolve 21) with the named
+    parameters set to normalized values. Returns the qCompress block for the FL::ClipFX entry."""
+    import zlib
+    raw = bytearray(open(_res('fl_reverb.bin'), 'rb').read())
+    o = 516
+    while o + 68 <= len(raw):
+        name = raw[o:o + 64].split(b'\0')[0].decode()
+        if not name:
+            break
+        if name in values:
+            struct.pack_into('<f', raw, o + 64, max(0.0, min(1.0, float(values[name]))))
+        o += 68
+    return struct.pack('>I', len(raw)) + zlib.compress(bytes(raw))
+
+
+def ti_fields(start, link=None, clipfx=None):
     inner = []
     if link:
         inner.append([1, 2, qtb([qs('0', link)])])
+    if clipfx:
+        inner.append([2, 2, [[1, 2, b'FL::ClipFX'], [2, 2, clipfx]]])
     inner.append([21, 0, start])
     pb = [[1, 2, [[1, 2, inner], [4, 0, 1], [9, 0, 1]]], [15, 0, 4]]
     raw = codec.pb_encode(pb)
@@ -248,7 +271,7 @@ def ti_audio_clip(c):
     effx = '<EffectFiltersBA>%s</EffectFiltersBA>' % eff if eff else '<EffectFiltersBA/>'
     return f'''<Element>
       <Sm2TiAudioClip DbId="{U()}">
-       <FieldsBlob>{ti_fields(c['start'], c.get('link'))}</FieldsBlob>
+       <FieldsBlob>{ti_fields(c['start'], c.get('link'), c.get('clipfx'))}</FieldsBlob>
        <PrettyType/>
        <Name>{esc(c['name'])}</Name>
        <Start>{c['start']}</Start>
