@@ -213,14 +213,40 @@ def watchdog():
             os._exit(0)
 
 
+def open_window(url, srv):
+    """Show the UI in the app's own window (macOS WebKit via pywebview). Returns False if not available."""
+    try:
+        import webview
+    except Exception:
+        return False
+    win = webview.create_window("AAF naar Resolve", url, width=900, height=820, min_size=(640, 560))
+
+    def closing():
+        p = STATE.get("proc")
+        if p and p.poll() is None:      # stop a running conversion with the window
+            p.terminate()
+
+    win.events.closing += closing
+    webview.start()                      # blocks on the main thread until the window is closed
+    srv.shutdown()
+    return True
+
+
 def main():
     srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
     url = "http://127.0.0.1:%d/?t=%s" % (srv.server_address[1], TOKEN)
-    threading.Thread(target=watchdog, daemon=True).start()
-    if "--no-browser" not in sys.argv:
-        threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     print(url, flush=True)
-    srv.serve_forever()
+    if "--no-browser" in sys.argv:
+        srv.serve_forever()
+        return
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    if "--browser" not in sys.argv and open_window(url, srv):
+        return
+    # fallback: the default browser; the watchdog quits once the page is gone
+    threading.Thread(target=watchdog, daemon=True).start()
+    threading.Timer(0.4, lambda: webbrowser.open(url)).start()
+    t.join()
 
 
 if __name__ == "__main__":

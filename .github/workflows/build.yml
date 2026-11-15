@@ -56,6 +56,7 @@ jobs:
             --add-data "engine/fl_base.json:." \
             --add-data "app/index.html:." \
             --collect-all imageio_ffmpeg \
+            --collect-all webview \
             app/main.py
           APP="dist/AAF naar Resolve.app"
           plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
@@ -66,6 +67,7 @@ jobs:
           BIN="dist/AAF naar Resolve.app/Contents/MacOS/AAF naar Resolve"
           "$BIN" --engine --help
           "$BIN" --selftest
+          "$BIN" --engine --help >/dev/null
       - name: Zip
         run: |
           ditto -c -k --sequesterRsrc --keepParent "dist/AAF naar Resolve.app" "AAF-naar-Resolve-${VERSION}-macOS-${{ matrix.arch }}.zip"

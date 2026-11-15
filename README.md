@@ -32,7 +32,7 @@ Python, ffmpeg en alle onderdelen zitten in de app. Je hoeft niets anders te ins
 ## Gebruiken
 
 1. In Avid: exporteer de sequence als **AAF**, met *Link to (Don't Export) Media*.
-2. Open de app. Er opent een venster in je browser.
+2. Open de app. Ze opent in een eigen venster.
 3. Kies de AAF, een uitvoermap en de handles, en klik **Omzetten**.
 4. In Resolve: maak een project met **dezelfde framerate** als je Avid-sequence, en kies
    **File → Import → Timeline…** met de .drt uit de uitvoermap.

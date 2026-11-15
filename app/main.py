@@ -30,6 +30,8 @@ def _selftest():
     gen.Template(os.path.join(aaf2drt.RES, "template.drt"))
     assert len(flmodel.raw_model("ms")) > 300000
     import aaf2, numpy, zstandard, imageio_ffmpeg  # noqa: F401
+    if sys.platform == "darwin":
+        import webview  # noqa: F401  (own app window)
     print("selftest ok", imageio_ffmpeg.get_ffmpeg_exe())
 
 
