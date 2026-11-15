@@ -183,9 +183,42 @@ def speed_timemap(src_start_frames, speed, media_frames, fps=None):
     return inn, q
 
 
-def effect_blob(effects):
-    """effects: list of (effect_id, [(param_id, value_or_keyframes)], n_empty_slots)"""
-    if not effects:
+def _zz(v):
+    v = int(round(v))
+    return (v << 1) ^ (v >> 63)
+
+
+def clip_eq_effects(bands):
+    """Resolve clip Equalizer (Inspector > Audio > Equalizer, 6 bands) as EffectFiltersBA messages.
+    bands: 6 dicts {on, freq, gain, q, type}; band 1 = high-pass, 2 = low shelf/bell, 3-4 = bell,
+    5 = high shelf/bell, 6 = low-pass. Encoding as Resolve 21 writes it: effect 128 = section on,
+    one effect 126 per band with params 105 band index, 101 type (0 shelf, 1 bell), 102 Hz,
+    104 dB x 10, 103 Q x 1000, all zigzag varints; field 2 = 0 marks a band switched off."""
+    def par(pid, val, key=1):
+        return [9, 2, [[1, 0, pid], [3, 2, [[1, 2, [[key, 0, _zz(val)]]]]]]]
+    out = [[1, 2, [[1, 0, 128], [3, 0, 6], [9, 2, b'']]]]
+    for i, b in enumerate(bands):
+        sub = [[1, 0, 126]]
+        if not b.get('on'):
+            sub.append([2, 0, 0])
+        sub += [[3, 0, 6], [9, 2, b'']]
+        if b.get('type') and i in (1, 4):
+            sub.append(par(101, b['type'], key=4))
+        if b.get('freq'):
+            sub.append(par(102, max(20, min(20000, b['freq']))))
+        if i in (1, 2, 3, 4) and b.get('gain') is not None:
+            sub.append(par(104, max(-200, min(200, b['gain'] * 10))))
+        if i in (1, 2, 3, 4) and b.get('q'):
+            sub.append(par(103, b['q'] * 1000))
+        sub.append(par(105, i))
+        out.append([1, 2, sub])
+    return out
+
+
+def effect_blob(effects, extra=None):
+    """effects: list of (effect_id, [(param_id, value_or_keyframes)], n_empty_slots);
+    extra: already-built effect messages (e.g. clip_eq_effects) appended after them."""
+    if not effects and not extra:
         return ''
     fields = []
     for eid, params, nslots in effects:
@@ -198,6 +231,7 @@ def effect_blob(effects):
         for _ in range(max(0, nslots - len(params))):
             sub.append([9, 2, b''])
         fields.append([1, 2, sub])
+    fields += list(extra or [])
     raw = codec.pb_encode(fields)
     return codec.blob_encode(raw, ver=2, compress=len(raw) > 40).hex()
 

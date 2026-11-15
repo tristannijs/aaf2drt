@@ -142,9 +142,48 @@ def probe_video(path):
     return info
 
 
-def audio_effects(it, plan, pan_pts):
-    """Clip gain (constant + Avid volume keyframes) and track pan -> EffectFiltersBA hex."""
+def eq3_to_resolve(eq, notes):
+    """Avid EQ3 7-Band settings -> Resolve's 6-band clip EQ. HPF/LPF and LF/HF map 1:1; Resolve has two
+    mid bells for EQ3's three (LMF, MF, HMF): the two that do something are kept, by largest gain."""
+    on = lambda n: bool(eq.get('l_in %d' % n))
+    band = lambda n: {'on': on(n), 'freq': eq.get('d_frq%d' % n), 'gain': eq.get('d_gai%d' % n, 0.0),
+                      'q': eq.get('d_bnd%d' % n, 1.0), 'type': 0}
+    mids = [band(n) for n in (3, 4, 5)]
+    active = [m for m in mids if m['on'] and abs(m['gain'] or 0) > 0.05]
+    if len(active) > 2:
+        active = sorted(active, key=lambda m: -abs(m['gain']))[:2]
+        notes.append('EQ3: drie actieve middenbanden, de twee sterkste behouden')
+    chosen = sorted(active, key=lambda m: m['freq'] or 0)
+    rest = [m for m in mids if m not in chosen]
+    while len(chosen) < 2:
+        m = dict(rest.pop(0)); m['gain'] = 0.0; chosen.append(m)
+    b3, b4 = sorted(chosen, key=lambda m: m['freq'] or 0)
+    return [{'on': on(1), 'freq': eq.get('d_frq1')}, band(2), b3, b4, band(6),
+            {'on': on(7), 'freq': eq.get('d_frq7')}]
+
+
+def clip_plugins(ops, notes):
+    """Real-time AudioSuite plugins on a clip -> (extra dB, clip EQ bands or None)."""
+    extra_db, bands = 0.0, None
+    for o in ops or []:
+        if o.get('op') != 'Audio Suite Plugin':
+            continue
+        name = o.get('_EFFECT_PLUGIN_NAME')
+        if name == 'EQ3 7-Band' and o.get('_AUDIO_SUITE_EFFECT_0_ALL_CHUNKS') and bands is None:
+            eq = aafmodel.eq3_bands(o['_AUDIO_SUITE_EFFECT_0_ALL_CHUNKS'])
+            bands = eq3_to_resolve(eq, notes)
+            extra_db += eq.get('d_inpt', 0.0) + eq.get('d_outp', 0.0)
+        elif name:
+            notes.append('plugin niet vertaald: %s' % name)
+    return extra_db, bands
+
+
+def audio_effects(it, plan, pan_pts, notes=None):
+    """Clip gain (constant + Avid volume keyframes), track pan and clip EQ -> EffectFiltersBA hex."""
+    notes = [] if notes is None else notes
     db, kf = aafmodel.gain_db(it['ops'])
+    plug_db, eq_bands = clip_plugins(it['ops'], notes)
+    db += plug_db
     head = float(plan['head']) * FPS             # file frame at the (untrimmed) clip start
     L = it['length']
     groups = []
@@ -169,7 +208,8 @@ def audio_effects(it, plan, pan_pts):
             pts = [(head, v0)] + [(head + (x - s0), v) for x, v in inside] + [(head + L - 1, v1)]
             if not groups: groups.append((124, [], 5))
             groups.append((144, [(96, gen.keyframe_bytes_generic(pts))], 1))
-    return gen.effect_blob(groups) if groups else None
+    extra = gen.clip_eq_effects(eq_bands) if eq_bands else None
+    return gen.effect_blob(groups, extra) if (groups or extra) else None
 
 
 # ---------------------------------------------------------------- main
@@ -255,7 +295,8 @@ def main():
                 inn = int(round(plan['head'] * FPS)) + it['trim_head']
                 stereo = plan['stereo'] and stereo_track
                 codes = gen.channel_code(info['ch'], plan['pick_index'] + 1, stereo=stereo)
-                effects_hex = audio_effects(it, plan, pan_pts)
+                notes = []
+                effects_hex = audio_effects(it, plan, pan_pts, notes)
                 c = dict(start=tc + it['r_start'], duration=it['r_length'], **{'in': inn},
                          name=(it['clips'][0].mob.name if it['clips'][0].mob is not None else fn),
                          media_ref=iid, media_start=info['start'], path=macp(os.path.join(audio_dir, fn)), reel=plan['tape'],
@@ -263,7 +304,10 @@ def main():
                          effects_hex=effects_hex)
                 xml.append(gen.ti_audio_clip(c))
                 report.append({'track': t['name'], 'start': tc + it['r_start'], 'file': fn,
-                               'channel': plan['pick_index'] + 1, 'channels': info['ch'], 'status': 'ok'})
+                               'channel': plan['pick_index'] + 1, 'channels': info['ch'], 'status': 'ok',
+                               **({'notes': notes} if notes else {})})
+                for n_ in notes:
+                    log('  %s @ %s: %s' % (t['name'], tc + it['r_start'], n_))
             elif it['kind'] == 'transition':
                 L = items[i - 1]['kind'] if i > 0 else None
                 R = items[i + 1]['kind'] if i + 1 < len(items) else None

@@ -14,6 +14,7 @@ leest de AAF zelf en bouwt de timeline rechtstreeks op:
 - **één poly-WAV per clip** met alle iso-kanalen van de take, in de originele volgorde, met handles (standaard 10 frames);
 - **het gekozen kanaal** staat per clip al juist ingesteld in Resolve, en stereo clips blijven stereo;
 - **gain, volumelijnen, pan en fades** uit Avid gaan mee;
+- **EQ3 7-Band** (real-time AudioSuite op een clip) wordt de Equalizer van de clip in Resolve;
 - **beeld**: de originele MXF's, met zoom/positie, snelheid en mattes;
 - een **Fairlight-mixer** die past bij de sporen van je sequence (mono/stereo per spoor);
 - framerate, resolutie en begintijdcode komen uit de AAF (getest: 24 en 25 fps, 50p-materiaal in een 25p-sequence).
@@ -42,7 +43,8 @@ volledige uitvoermap en de beeldmedia.
 
 ## Beperkingen
 
-Drop-frame-tijdcode (29.97/59.94) wordt juist gerekend, maar is nog niet met een echte AAF getest. Nog niet ondersteund
+Drop-frame-tijdcode (29.97/59.94) wordt juist gerekend, maar is nog niet met een echte AAF getest. Andere AudioSuite-plugins (zoals D-Verb) en
+track-effecten worden nog niet vertaald; het rapport meldt ze. Nog niet ondersteund
 of niet getest: 5.1- en andere multikanaalsporen, variabele
 snelheid (timewarp met keyframes), reverse en freeze frames, AMA-gelinkte media (.mov, BRAW, R3D), genestte
 sequences en multicam, crop en positie Y, titels en kleureffecten. Getest met DaVinci Resolve Studio 21.1.

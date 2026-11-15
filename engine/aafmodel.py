@@ -95,6 +95,31 @@ def op_params(og):
                 out['params'][pr.name] = pr.value
         except Exception:
             pass
+    if out['op'] == 'Audio Suite Plugin':      # real-time AudioSuite on a clip: keep the plugin state
+        try:
+            for t in og.get('ComponentAttributeList') or []:
+                if t.name in ('_EFFECT_PLUGIN_NAME', '_AUDIO_SUITE_EFFECT_0_ALL_CHUNKS'):
+                    out[t.name] = t.value
+        except Exception:
+            pass
+    return out
+
+
+def eq3_bands(chunk):
+    """Avid EQ3 7-Band AudioSuite chunk -> dict of named settings (d_ = double, l_ = long).
+    Records: 8 bytes ASCII name (e.g. 'd_frq2'), then a big-endian double (d_, 8 bytes) or int32 (l_, 4 bytes)."""
+    import struct as _st
+    b = bytes(chunk)
+    i = b.find(b'l_hak3')
+    out = {}
+    while i >= 0 and i + 12 <= len(b):
+        name = b[i:i + 8].split(b'\0')[0].decode('ascii', 'replace')
+        if not (len(name) >= 3 and name[1] == '_' and name[0] in 'dl'):
+            break
+        if name.startswith('d_'):
+            out[name] = _st.unpack('>d', b[i + 8:i + 16])[0]; i += 16
+        else:
+            out[name] = _st.unpack('>i', b[i + 8:i + 12])[0]; i += 12
     return out
 
 
