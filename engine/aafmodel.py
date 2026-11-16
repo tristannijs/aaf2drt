@@ -147,7 +147,8 @@ def track_plugin(g):
             pass
         if attrs.get('_EFFECT_PLUGIN_NAME'):
             return {'name': attrs['_EFFECT_PLUGIN_NAME'], 'chunk': attrs.get('_ATN_AUDIO_RTAS_EFFECT_CHUNK'),
-                    'insert': attrs.get('INSERT')}
+                    'insert': attrs.get('INSERT'), 'manufacturer': attrs.get('_EFFECT_PLUGIN_MANUFACTURER_ID'),
+                    'product': attrs.get('_EFFECT_PLUGIN_PRODUCT_ID')}
         segs = list(g.segments)
         g = segs[0] if segs else None
     return None

@@ -25,12 +25,15 @@ leest de AAF zelf en bouwt de timeline rechtstreeks op:
 |---|---|---|
 | **EQ3 7-Band** | wordt de Equalizer van de clip | nog niet |
 | **D-Verb** | wordt een Fairlight Reverb op de clip | wordt een Fairlight Reverb-insert op het spoor |
-| **plugins van derden gebouwd met JUCE** (bv. Soundly Place it) | dezelfde plugin als Audio Unit, met exact dezelfde instellingen | nog niet |
+| **plugins van derden gebouwd met JUCE** (bv. Soundly Place it) | dezelfde plugin als Audio Unit, met exact dezelfde instellingen | dezelfde plugin als VST3-insert, met de standaardinstellingen: Avid zet de instellingen van plugins van derden op sporen niet in de AAF |
 | andere plugins | niet; staat in het rapport | niet; staat in het rapport |
 
 De D-Verb-vertaling is een benadering: decay, pre-delay en mix kloppen, kamertype en grootte worden een ruimte
 van vergelijkbare afmetingen, diffusion heeft geen equivalent. Fairlight Reverb gaat tot 4 s decay en 200 ms
 pre-delay; langer wordt ingekort (het rapport meldt het). Van een D-Verb op een spoor gaat de input-gain niet mee.
+
+Wil je de instellingen van zo'n spoor-plugin toch meenemen, zet de plugin dan in Avid als real-time AudioSuite op
+de clips in plaats van op het spoor, of bewaar de instelling als preset in de plugin zelf en kies die in Resolve.
 
 Een plugin van derden moet in Resolve geïnstalleerd zijn op de Mac waar je de timeline opent; anders toont Resolve
 hem als ontbrekend, maar de instellingen blijven bewaard. Of een plugin met JUCE gebouwd is, merk je vanzelf: de

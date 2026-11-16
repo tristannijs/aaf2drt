@@ -81,3 +81,15 @@ Gemeten in Resolve 21.1 met v = 0, 0.1, 0.25, 0.4, 0.75, 1 (en standaardwaarden)
 - JUCE-plugins zetten in AAX, AU en VST3 dezelfde state (`VC2!` + lengte + XML). In de AAF zit die in
   `_AUDIO_SUITE_EFFECT_0_ALL_CHUNKS`; AAX-fabrikant- en product-id zijn dezelfde getallen als AU manufacturer
   en subtype. Getest met Soundly Place it 1.1.4.
+
+## Plugins van derden als spoor-insert
+
+- Avid schrijft voor een plugin van derden op een spoor alleen naam, fabrikant- en product-id en `INSERT` in de
+  AAF, geen instellingen (drie exports met andere instellingen van Soundly Place it, Media Composer 2024.10).
+- Resolve bewaart een VST3-insert in `EffectPresets` als record soort 1 met id `vst3:<class id>`; voor JUCE is dat
+  `ABCDEF01 9182FAEB` + fabrikantcode + plugincode (= de AAX-id's). De payload is de VST3-state:
+  `[0][lengte - 16][..]` + `VC2!`-state + `JUCEPrivateData` (`fl_vst3juce.bin`). Het kanaal staat in **byte 1**
+  van het record (bij clip-FX in byte 0).
+- Een lege payload laat Resolve de insert weggooien; een neutrale JUCE-state (`<DEFAULT/>`) laadt de plugin met
+  standaardinstellingen. De parameterlijst hoeft niet mee: Resolve vult `EffectContext` zelf aan zodra de plugin
+  laadt. Getest: Place it alleen, en samen met twee Reverb-inserts, in één mixer.

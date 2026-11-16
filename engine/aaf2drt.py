@@ -15,7 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 # data files (template.drt, fl_base.json) live next to the code, or in the bundle when frozen
 RES = getattr(sys, '_MEIPASS', HERE)
-import aafmodel, polyplan, gen, codec
+import aafmodel, flmodel, polyplan, gen, codec
 
 FPS = 24.0
 RATE = Fraction(24)
@@ -404,26 +404,37 @@ def main():
                 elif R == 'clip': pos, align = 1, 1
                 else: pos, align = 3, 3
                 xml.append(gen.ti_transition(tc + it['start'], ln, align, pos))
-        reverb = None
+        insert = None
         for pl in t.get('track_plugins') or []:
             tnotes = []
-            if pl['name'] == 'D-Verb' and pl.get('chunk') and reverb is None:
+            if insert is not None:
+                tnotes.append('spoor-plugin %s niet meegenomen: alleen het eerste insert-vak wordt gevuld' % pl['name'])
+            elif pl['name'] == 'D-Verb' and pl.get('chunk'):
                 d = aafmodel.dverb_params(pl['chunk'])
                 if d is not None:
-                    reverb = dverb_to_fairlight(d, tnotes)
+                    insert = flmodel.reverb_insert(dverb_to_fairlight(d, tnotes))
                     tnotes.append('D-Verb %s %s, decay %.2f s, mix %d%% -> Fairlight Reverb (insert)'
                                   % (d['algo'], d['size'], min(d['decay'], 99), round(d['mix'])))
                     if abs(d['input_db']) > 0.05:
                         tnotes.append('D-Verb input %.1f dB niet meegenomen (spoor-insert)' % d['input_db'])
                 else:
                     tnotes.append('D-Verb: instellingen onleesbaar')
+            elif str(pl.get('manufacturer') or '').isdigit() and str(pl.get('product') or '').isdigit():
+                # third-party plugin: same plugin as VST3 (JUCE class id). Avid's AAF carries no settings for
+                # third-party track plugins, so unless it does, the plugin comes in with its default settings.
+                st = aafmodel.juce_state(pl.get('chunk'))
+                insert = flmodel.plugin_insert(flmodel.juce_vst3_id(pl['manufacturer'], pl['product']), pl['name'],
+                                               flmodel.juce_vst3_state(st))
+                tnotes.append('%s als VST3-insert meegenomen, %s (moet in Resolve geïnstalleerd zijn)'
+                              % (pl['name'], 'met dezelfde instellingen' if st else
+                                 'met standaardinstellingen: Avid zet de instellingen van spoor-plugins niet in de AAF'))
             else:
                 tnotes.append('spoor-plugin niet vertaald: %s' % pl['name'])
             for n_ in tnotes:
                 log('  %s (spoor): %s' % (t['name'], n_))
             report.append({'track': t['name'], 'status': 'track_fx', 'notes': tnotes})
         audio_tracks.append({'name': t['name'], 'subtype': 0 if stereo_track else 1, 'items_xml': xml,
-                             'reverb': reverb})
+                             'insert': insert})
 
     log('Video ...')
     vfields = lambda start: codec.blob_encode(codec.pb_encode([[1, 2, [[1, 2, [[21, 0, start]]], [4, 0, 1], [9, 0, 1]]],

@@ -134,3 +134,17 @@ def test_juce_plugin_to_au_record():
     assert kind == 1 and raw[32:56] == b'au:1399090297:1349280628' and len(raw) == 20 + 12 + 412 + ln
     pl = plistlib.loads(raw[444:])
     assert pl['jucePluginState'] == state and pl['manufacturer'] == 1399090297 and pl['type'] == 0x61756678
+
+
+def test_juce_vst3_insert():
+    import flmodel, struct
+    assert flmodel.juce_vst3_id(1399090297, 1349280628) == 'vst3:ABCDEF019182FAEB53646C79506C6374'  # Place it
+    tpl = open(os.path.join(os.path.dirname(flmodel.__file__), 'fl_vst3juce.bin'), 'rb').read()
+    i = tpl.find(b'VC2!'); n = struct.unpack_from('<I', tpl, i + 4)[0]
+    assert flmodel.juce_vst3_state(tpl[i:i + 8 + n]) == tpl                      # rebuilds Resolve's own state
+    d = flmodel.juce_vst3_state()
+    assert struct.unpack_from('<I', d, 4)[0] == len(d) - 16 and b'<DEFAULT/>' in d
+    base = len(flmodel.raw_model('m'))
+    m = flmodel.raw_model('m', inserts={0: flmodel.plugin_insert('vst3:X', 'Plug', d)})
+    secs = [s[1] for s in flmodel._sections(m)[0]]
+    assert 'EffectPresets' in secs and len(m) > base
