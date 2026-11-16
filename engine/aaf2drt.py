@@ -47,6 +47,8 @@ def ffmpeg_bin():
 
 def decode_segment(path, start_sample, n, sr):
     """Decode n samples starting at start_sample from a mono MXF/WAV -> int32 left-justified."""
+    if n <= 0:
+        raise ValueError('decode_segment: lengte %d samples voor %s' % (n, path))
     s0 = max(0, start_sample)
     coarse = max(0, s0 - sr)                 # seek to ~1 s before, then trim sample-accurately
     cmd = [ffmpeg_bin(), '-v', 'error', '-nostdin']
@@ -307,6 +309,12 @@ def main():
         for i, it in enumerate(items):
             if it['kind'] == 'clip':
                 plan = polyplan.plan_clip(it['clips'], it['length'], RATE)
+                if plan is not None and plan.get('error'):
+                    log('  clip buiten mediabestand: %s  (positie %.2fs, bestand %ss)  %s'
+                        % (plan['master'], plan['file_pos'], '%.2f' % plan['file_dur'] if plan['file_dur'] is not None else '?', plan['path']))
+                    report.append({'track': t['name'], 'start': tc + it['r_start'], 'status': 'out_of_range',
+                                   'file': plan['path'], 'file_pos': plan['file_pos'], 'file_dur': plan['file_dur']})
+                    continue
                 if plan is None or any(c['path'] is None for c in plan['channels']):
                     report.append({'track': t['name'], 'start': tc + it['r_start'], 'status': 'unresolved'})
                     continue

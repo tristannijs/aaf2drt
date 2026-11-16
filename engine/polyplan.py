@@ -131,6 +131,11 @@ def plan_clip(sourceclips, length_frames, fps=24):
     if pick['dur'] is not None:
         seg_end = min(seg_end, pick['dur'])
     head = file_pos - seg_start
+    if seg_end <= seg_start:
+        # clip lies (partly) outside the media file: report it instead of handing ffmpeg a negative length
+        return {'error': 'out_of_range', 'file_pos': float(file_pos),
+                'file_dur': float(pick['dur']) if pick['dur'] is not None else None,
+                'path': pick['path'], 'master': master.name if master is not None else None}
     plan = {'master': master.name if master is not None else None, 'tape': pick['tape'],
             'stereo': stereo, 'pick_index': pick_idx, 'tape_seg_start': pick['tape_start'] + seg_start,
             'seg_dur': seg_end - seg_start, 'head': head, 'channels': []}
