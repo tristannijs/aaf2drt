@@ -79,7 +79,13 @@ def resolve_source(clip, depth=0):
         comp, off = segment_at(slot.segment, int(pos))
         if comp is None or type(comp).__name__ != 'SourceClip' or comp.mob is None:
             return None
-        pos = Fraction(comp.start or 0) + off + (pos - int(pos))
+        # off is in this slot's edit units, comp.start in the referenced slot's: rescale when rates differ
+        try:
+            child = comp.mob.slot_at(comp.slot_id)
+        except Exception:
+            child = next((s for s in comp.mob.slots if s.slot_id == comp.slot_id), None)
+        crate = frac(child.edit_rate) if child is not None else rate
+        pos = Fraction(comp.start or 0) + (off + (pos - int(pos))) * crate / rate
         mob = comp.mob
         slot_id = comp.slot_id
     return None
