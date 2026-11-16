@@ -50,14 +50,26 @@
   </div>
   <div class="row">
     <div class="num">02</div>
-    <div class="label">Uitvoermap<small>hier komen de WAV's en de .drt</small></div>
+    <div class="label">Uitvoermap<small>hier komen de .drt, de WAV's en (als je dat kiest) het beeld</small></div>
     <div><div class="path empty" id="out">nog niet gekozen</div></div>
     <div><button class="b" onclick="pickOut()">Kies…</button></div>
   </div>
   <div class="row">
     <div class="num">03</div>
-    <div class="label">Handles<small>frames voor en na elke clip</small></div>
+    <div class="label">Handles audio<small>frames voor en na elke clip in de WAV's; 0 = geen handles</small></div>
     <div><input type="number" id="handles" value="10" min="0" max="250"></div>
+    <div></div>
+  </div>
+  <div class="row">
+    <div class="num">04</div>
+    <div class="label">Beeld meekopiëren<small>alleen de gebruikte stukken, zonder hercoderen, in de map Video; uit = de .drt verwijst naar je Avid MediaFiles</small></div>
+    <div><label><input type="checkbox" id="copyvideo" checked onchange="document.getElementById('vhandles').disabled=!this.checked"> kopiëren</label></div>
+    <div></div>
+  </div>
+  <div class="row">
+    <div class="num">05</div>
+    <div class="label">Handles beeld<small>frames voor en na elke clip in de gekopieerde video; 0 = geen handles</small></div>
+    <div><input type="number" id="vhandles" value="10" min="0" max="250"></div>
     <div></div>
   </div>
 
@@ -79,7 +91,7 @@ async function pickAaf(){const r=await api("/pick",{kind:"file",prompt:"Kies de 
 async function pickOut(){const start=S.aaf?S.aaf.replace(/\/[^\/]+$/,""):null; const r=await api("/pick",{kind:"folder",prompt:"Kies of maak een uitvoermap",start}); if(r.path){S.out=r.path;setPath("out",r.path);} }
 async function run(){
   if(!S.aaf||!S.out) return alert("Kies eerst een AAF en een uitvoermap.");
-  const r=await api("/run",{aaf:S.aaf,out:S.out,handles:document.getElementById("handles").value});
+  const r=await api("/run",{aaf:S.aaf,out:S.out,handles:document.getElementById("handles").value,copy_video:document.getElementById("copyvideo").checked,video_handles:document.getElementById("vhandles").value});
   if(r.error) return alert(r.error);
   logN=0; document.getElementById("log").textContent=""; document.getElementById("summary").style.display="none";
   document.getElementById("bRun").disabled=true; document.getElementById("bar").style.display="block";

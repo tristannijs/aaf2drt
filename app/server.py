@@ -89,6 +89,8 @@ def bundle_report(out):
 def run_engine(params):
     args = ["--engine", "--aaf", params["aaf"], "--out", params["out"],
             "--handles", str(int(params.get("handles", 10)))]
+    if params.get("copy_video"):
+        args += ["--copy-video", "--video-handles", str(int(params.get("video_handles", 10) or 0))]
     cmd = [sys.executable] + args if FROZEN else [sys.executable, "-u", "-B", MAIN] + args
     env = dict(os.environ, PYTHONUNBUFFERED="1")
     ff = ffmpeg_path()

@@ -15,7 +15,8 @@ leest de AAF zelf en bouwt de timeline rechtstreeks op:
 - **het gekozen kanaal** staat per clip al juist ingesteld in Resolve, en stereo clips blijven stereo;
 - **gain, volumelijnen, pan en fades** uit Avid gaan mee;
 - **plugins** gaan mee waar dat kan (zie hieronder);
-- **beeld**: de originele MXF's, met zoom/positie, snelheid en mattes;
+- **beeld**: met zoom/positie, snelheid en mattes; de app kopieert alleen de gebruikte stukken van de video (met
+  handles, zonder hercoderen) naar een map `Video`, zodat de uitvoermap op zichzelf compleet is;
 - een **Fairlight-mixer** die past bij de sporen van je sequence (mono/stereo per spoor);
 - framerate, resolutie en begintijdcode komen uit de AAF (getest: 24 en 25 fps, 50p-materiaal in een 25p-sequence).
 
@@ -62,12 +63,18 @@ Python, ffmpeg en alle onderdelen zitten in de app. Je hoeft niets anders te ins
 
 1. In Avid: exporteer de sequence als **AAF**, met *Link to (Don't Export) Media*.
 2. Open de app. Ze opent in een eigen venster.
-3. Kies de AAF, een uitvoermap en de handles, en klik **Omzetten**.
+3. Kies de AAF, een uitvoermap, de handles voor audio en beeld (0 = geen handles), of het beeld mee gekopieerd
+   moet worden, en klik **Omzetten**.
 4. In Resolve: maak een project met **dezelfde framerate** als je Avid-sequence, en kies
    **File → Import → Timeline…** met de .drt uit de uitvoermap.
 
-De uitvoermap bevat de .drt, een map `Audio` met de poly-WAV's, en `aaf2drt_report.json`. Geef de mixer de
-volledige uitvoermap en de beeldmedia.
+De uitvoermap bevat de .drt, een map `Audio` met de poly-WAV's, een map `Video` met de ingekorte beeldbestanden
+(.mov, zelfde codec en tijdcode als het origineel) en `aaf2drt_report.json`. Geef de mixer de volledige uitvoermap.
+Zet je het kopiëren van beeld uit, dan verwijst de timeline naar de originele bestanden in je Avid MediaFiles.
+
+Beeld wordt zonder hercoderen ingekort; dat kan alleen bij codecs waarin elk beeld op zichzelf staat (DNxHD/DNxHR,
+ProRes en dergelijke, wat Avid zelf gebruikt). Andere codecs worden volledig gekopieerd. Stukken van hetzelfde
+bestand die minder dan een seconde uit elkaar liggen, worden samen in één bestand gezet.
 
 ## Beperkingen
 

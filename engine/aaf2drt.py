@@ -135,6 +135,68 @@ def probe_audio(path):
     return (int(m.group(1)) if m else 48000), 24
 
 
+INTRA_CODECS = ('dnxhd', 'dnxhr', 'prores', 'mjpeg', 'rawvideo', 'v210', 'dvvideo', 'jpeg2000', 'cfhd')
+
+
+def frames_to_tc(frames, fps):
+    fps = int(round(fps))
+    f = frames % fps; s_ = frames // fps
+    return '%02d:%02d:%02d:%02d' % (s_ // 3600 % 24, s_ // 60 % 60, s_ % 60, f)
+
+
+def make_video_segments(src, info, ranges, video_dir, gap_seconds=1.0):
+    """Trimmed copies of one video file: the used ranges (media frames, handles included) are merged when they
+    overlap or lie less than gap_seconds apart, and each stretch is cut without re-encoding (stream copy) into
+    a .mov with the matching start timecode. Long-GOP codecs cannot be cut on any frame: those are copied whole.
+    Returns [(first frame, end frame, mac path, info of the copy)]."""
+    import shutil
+    os.makedirs(video_dir, exist_ok=True)
+    mf = info.get('fps') or FPS
+    total = int(info.get('frames') or 0)
+    stem = os.path.splitext(os.path.basename(src))[0]
+    if (info.get('codec') or '').lower() not in INTRA_CODECS:
+        dst = os.path.join(video_dir, os.path.basename(src))
+        if not (os.path.exists(dst) and os.path.getsize(dst) == os.path.getsize(src)):
+            log('  video kopiëren (volledig, %s kan niet zonder hercoderen ingekort worden): %s'
+                % (info.get('codec'), os.path.basename(src)))
+            shutil.copy2(src, dst + '.part'); os.replace(dst + '.part', dst)
+        return [(0, total or 10 ** 9, macp(dst), info)]
+    merged = []
+    for a, b in sorted(ranges):
+        if merged and a <= merged[-1][1] + gap_seconds * mf:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    out = []
+    tc0 = gen.tc_to_frames(info.get('tc') or '00:00:00:00', int(round(mf)))
+    step = int(round(mf / FPS)) if abs(mf / FPS - round(mf / FPS)) < 1e-6 and mf > FPS else 1
+    for k, (a, b) in enumerate(merged):
+        a -= a % step                          # start on a timeline frame (e.g. an even frame of 50p in 25p)
+        if total:
+            a, b = max(0, a), min(total, b)
+        if b <= a:
+            continue
+        dst = os.path.join(video_dir, '%s_%03d.mov' % (stem, k + 1))
+        tcs = frames_to_tc(tc0 + a, mf)
+        seg = dict(info, tc=tcs, frames=b - a)
+        ok = False
+        if os.path.exists(dst):
+            have = probe_video(dst)
+            ok = have.get('frames') == b - a and have.get('tc') == tcs
+        if not ok:
+            log('  video inkorten: %s frames %d-%d (%s)' % (os.path.basename(src), a, b, tcs))
+            cmd = [ffmpeg_bin(), '-hide_banner', '-nostdin', '-y', '-ss', '%.6f' % (a / mf), '-i', src,
+                   '-map', '0:v:0', '-frames:v', str(b - a), '-c', 'copy', '-timecode', tcs,
+                   '-f', 'mov', dst + '.part']
+            p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if p.returncode:
+                raise RuntimeError('ffmpeg kon %s niet inkorten: %s' % (src, p.stderr.decode(errors='replace')[-400:]))
+            os.replace(dst + '.part', dst)
+        seg['mtime'] = os.path.getmtime(dst)
+        out.append((a, b, macp(dst), seg))
+    return out
+
+
 def probe_video(path):
     p = subprocess.run([ffmpeg_bin(), '-hide_banner', '-nostdin', '-i', path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     t = p.stderr.decode(errors='replace')
@@ -302,9 +364,16 @@ def main():
     ap.add_argument('--handles', type=int, default=10)
     ap.add_argument('--name', default=None)
     ap.add_argument('--plan-only', action='store_true')
+    ap.add_argument('--copy-video', action='store_true',
+                    help='copy the used video into OUT/Video (trimmed to the used parts plus handles) and use the copies')
+    ap.add_argument('--video-handles', type=int, default=None,
+                    help='handles (timeline frames) for the trimmed video copies; default: same as --handles')
     ap.add_argument('--path-map', action='append', default=[], help='MACPREFIX=LOCALPREFIX')
     args = ap.parse_args()
-    polyplan.HANDLE_FRAMES = args.handles
+    polyplan.HANDLE_FRAMES = max(0, args.handles)
+    if args.video_handles is None:
+        args.video_handles = args.handles
+    args.video_handles = max(0, args.video_handles)
     for m in args.path_map:
         a, b = m.split('=', 1); PATHMAP.append((a, b))
 
@@ -441,27 +510,73 @@ def main():
                                                               [2, 2, bytes.fromhex('0000000000000006ffffffffffffffff')]]), 2, False).hex()
     vmedia = {}
     video_tracks = []
-    for t in tracks:
+    # pass 1: resolve every video clip to its source file and the media frames it uses
+    vclips = {}                                    # (track no, item no) -> (path, r, info)
+    uses = {}                                      # source path -> [(first, end) media frames incl. handles]
+    vprobe = {}
+    for ti_, t in enumerate(tracks):
+        if t['kind'] != 'video':
+            continue
+        for i, it in enumerate(aafmodel.resolve_edits(t['items'])):
+            if it['kind'] != 'clip':
+                continue
+            r = aafmodel.resolve_source(it['clips'][0], None if it.get('native_rate') else (t.get('rate') or RATE))
+            if not r or not aafmodel.file_url(r['mob']):
+                continue
+            path = polyplan.mac_path(aafmodel.file_url(r['mob']))
+            if path not in vprobe:
+                if not os.path.exists(local(path)):
+                    log('  missing video', path); vprobe[path] = None; continue
+                vprobe[path] = probe_video(local(path))
+            info = vprobe[path]
+            if info is None:
+                continue
+            vclips[(ti_, i)] = (path, r, info)
+            mf = info.get('fps') or FPS
+            speed = 1.0
+            if it.get('inner_len') and it.get('length') and not it.get('speed_map') and r.get('rate'):
+                speed = (it['inner_len'] / float(r['rate'])) / (it['length'] / FPS)
+            if it.get('speed_map'):
+                speed = None                           # variable speed: keep the whole file
+            s_tl = r['pos'] * FPS + it['trim_head']    # timeline frames from the start of the file
+            h = args.video_handles * mf / FPS
+            if speed is None:
+                rng = (0, int(info.get('frames') or 0))
+            else:
+                e_tl = s_tl + it['r_length'] * abs(speed)
+                rng = (max(0, int(math.floor(s_tl * mf / FPS - h))),
+                       min(int(info.get('frames') or 10 ** 9), int(math.ceil(e_tl * mf / FPS + h))))
+            uses.setdefault(path, []).append(rng)
+    # pass 2 (only with --copy-video): one trimmed copy per stretch of a file that is used
+    segments = {}                                  # source path -> [(first, end, mac path of the copy)]
+    if args.copy_video:
+        vdir = os.path.join(os.path.abspath(args.out), 'Video')
+        for path, rngs in uses.items():
+            segments[path] = make_video_segments(local(path), vprobe[path], rngs, vdir)
+    # pass 3: timeline items
+    for ti_, t in enumerate(tracks):
         if t['kind'] != 'video':
             continue
         items = aafmodel.resolve_edits(t['items'])
         xml = []
         for i, it in enumerate(items):
             if it['kind'] == 'clip':
-                r = aafmodel.resolve_source(it['clips'][0], None if it.get('native_rate') else (t.get('rate') or RATE))
-                if not r or not aafmodel.file_url(r['mob']):
+                if (ti_, i) not in vclips:
                     continue
-                path = polyplan.mac_path(aafmodel.file_url(r['mob']))
-                if path not in vmedia:
-                    if not os.path.exists(local(path)):
-                        log('  missing video', path); continue
-                    info = probe_video(local(path))
-                    iid, bid, mx = gen.mp_video_item(folder_id, os.path.dirname(path), os.path.basename(path), info,
+                path, r, info = vclips[(ti_, i)]
+                mf = info.get('fps') or FPS          # media frame rate (can differ from the timeline, e.g. 50p in 25p)
+                use, first = path, 0
+                for a_, b_, seg_path, seg_info in segments.get(path, []):
+                    if a_ <= (r['pos'] * FPS + it['trim_head']) * mf / FPS + 1e-6 < b_:
+                        use, first, info = seg_path, a_, seg_info
+                        break
+                if use not in vmedia:
+                    iid, bid, mx = gen.mp_video_item(folder_id, os.path.dirname(use), os.path.basename(use), info,
                                                      fps=info.get('fps') or FPS)
                     media_xml.append(mx); bt_ids.append(bid)
-                    vmedia[path] = (iid, info)
-                iid, info = vmedia[path]
-                mf = info.get('fps') or FPS          # media frame rate (can differ from the timeline, e.g. 50p in 25p)
+                    vmedia[use] = (iid, info)
+                iid, info = vmedia[use]
+                r = dict(r, pos=r['pos'] - first / mf)    # position inside the (trimmed) file
                 if it.get('inner_len') and it.get('length') and not it.get('speed_map') and r.get('rate'):
                     # real playback speed = source seconds used / timeline seconds. A Motion Control that only
                     # converts the frame rate (Avid 50p media in a 25p sequence) gives exactly 1.0.
@@ -477,7 +592,7 @@ def main():
                 c = dict(start=tc + it['r_start'], duration=it['r_length'], **{'in': inn},
                          timemap_hex=tmap, effects_hex=eff_hex,
                          name=info.get('mat_name') or info.get('reel') or os.path.basename(path), media_ref=iid,
-                         media_start=gen.tc_to_frames(info['tc'], int(round(mf))) / mf, path=path, reel=info.get('reel'), fps=mf,
+                         media_start=gen.tc_to_frames(info['tc'], int(round(mf))) / mf, path=use, reel=info.get('reel'), fps=mf,
                          media_frames=int(info.get('frames') or 1), fields_hex=vfields(tc + it['r_start']),
                          preconform='00000100000030c20000010000003042')
                 xml.append(gen.ti_video_clip(c))
