@@ -308,7 +308,7 @@ def main():
         xml = []
         for i, it in enumerate(items):
             if it['kind'] == 'clip':
-                plan = polyplan.plan_clip(it['clips'], it['length'], RATE)
+                plan = polyplan.plan_clip(it['clips'], it['length'], RATE, it.get('native_rate', False))
                 if plan is not None and plan.get('error'):
                     log('  clip buiten mediabestand: %s  (positie %.2fs, bestand %ss)  %s'
                         % (plan['master'], plan['file_pos'], '%.2f' % plan['file_dur'] if plan['file_dur'] is not None else '?', plan['path']))
@@ -405,7 +405,7 @@ def main():
         xml = []
         for i, it in enumerate(items):
             if it['kind'] == 'clip':
-                r = aafmodel.resolve_source(it['clips'][0], t.get('rate') or RATE)
+                r = aafmodel.resolve_source(it['clips'][0], None if it.get('native_rate') else (t.get('rate') or RATE))
                 if not r or not aafmodel.file_url(r['mob']):
                     continue
                 path = polyplan.mac_path(aafmodel.file_url(r['mob']))

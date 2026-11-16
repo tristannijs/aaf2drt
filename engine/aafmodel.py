@@ -216,6 +216,7 @@ def flatten(seg, pos, ops, items, rate):
                 c['length'] = seg.length            # timeline length of the speed effect
                 c['inner_len'] = segs[0].length     # source edit units used (source rate may differ, e.g. 50p in 25p)
                 c['ops'] = ops + [o]
+                c['native_rate'] = True             # inner clip's StartTime counts in the source slot's rate
                 sp = o['params'].get('PARAM_SPEED_MAP_U')
                 if isinstance(sp, list) and sp:
                     c['speed'] = float(sp[0][1]); c['speed_map'] = True
@@ -234,6 +235,7 @@ def flatten(seg, pos, ops, items, rate):
             for x in inner:
                 if 'start' in x: x['start'] = pos + int(round(x['start'] * ratio))
                 if 'length' in x and x['length'] is not None: x['length'] = int(round(x['length'] * ratio))
+                if x.get('kind') == 'clip': x['native_rate'] = True
                 items.append(x)
             return
         if segs:

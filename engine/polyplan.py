@@ -91,13 +91,13 @@ def channels_of_master(master):
     return out
 
 
-def plan_clip(sourceclips, length_frames, fps=24):
+def plan_clip(sourceclips, length_frames, fps=24, native_rate=False):
     """Plan one poly file for a timeline clip. sourceclips: 1 (mono pick) or 2 (stereo combiner)."""
     h = Fraction(HANDLE_FRAMES, fps)
     dur = Fraction(length_frames, fps)
     picks = []
     for sc in sourceclips:
-        r = aafmodel.resolve_source(sc, Fraction(fps))
+        r = aafmodel.resolve_source(sc, None if native_rate else Fraction(fps))
         if r is None:
             return None
         master, mslot, mpos = master_of(r['chain'])
