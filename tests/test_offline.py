@@ -93,3 +93,16 @@ def test_clip_fx_reverb_roundtrip():
     while raw[o:o + 64].split(b'\0')[0]:
         vals[raw[o:o + 64].split(b'\0')[0].decode()] = struct.unpack('<f', raw[o + 64:o + 68])[0]; o += 68
     assert abs(vals['Dry/Wet'] - 0.25) < 1e-6 and abs(vals['T@-60dB'] - 0.5) < 1e-6
+
+
+def test_track_reverb_insert():
+    """Model with Reverb inserts grows exactly as in Resolve 21.1's own exports (one on a stereo track: +2886 bytes,
+    one on a mono track: +2873, both: +5146)."""
+    import flmodel
+    base = len(flmodel.raw_model('sm'))
+    assert len(flmodel.raw_model('sm', reverbs={0: {}})) - base == 2886
+    assert len(flmodel.raw_model('sm', reverbs={1: {}})) - base == 2873
+    two = flmodel.raw_model('sm', reverbs={0: {}, 1: {'Dry/Wet': 0.3}})
+    assert len(two) - base == 5146
+    secs = [s[1] for s in flmodel._sections(two)[0]]
+    assert secs.index('EffectPresets') == secs.index('EffectContext') + 1

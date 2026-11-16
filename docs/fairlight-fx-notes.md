@@ -10,7 +10,14 @@
   `{1: id, 3: {1: {k: zigzag-varint}}}`: 105 bandindex (0–5), 101 type (k=4; 0 shelf, 1 bell, alleen B2/B5),
   102 frequentie in Hz, 104 gain in dB × 10, 103 Q × 1000. B1 = high-pass, B6 = low-pass, B3/B4 = bell.
   Geijkt met handmatige wijzigingen en teruggelezen: Resolve neemt gegenereerde waarden exact over.
-- **EQ en inserts op een spoor**: in `FLStudioModelBA` (de mixer). Nog niet ontcijferd.
+- **Inserts op een spoor**: in `FLStudioModelBA` (de mixer, een boom van `f\x88fw`-blokken met benoemde secties).
+  Een Reverb-insert raakt vijf plekken (geijkt met exports zonder, met één en met twee inserts, Resolve 21.1):
+  sectie `EffectContext` (per instantie een sleutel 37, 38, … met de 25 parameter-id's), een nieuwe sectie
+  `EffectPresets` direct daarna (soort 2; blok `[5][N]` + per instantie 2136 bytes: byte 1 = eerste kanaal van
+  het spoor, daarna dezelfde 68-byte-parameterrecords als de clip-FX vanaf byte 496), de effectnamentabel
+  (`Reverb`, `Reverb:2`, … na `DolbyAtmosRenderer`), de parameternamentabel (`Out 1`, `Out 2`, dan de 25
+  Reverb-parameters, id's na de hoogste bestaande) en per kanaal vector 29 = 1 (insert actief; vector 170 = 1
+  voor stereo). Plus slot 0 van tabel 0x4a4 = 1. Zie `flmodel._add_reverbs`. EQ op een spoor: nog niet ontcijferd.
 
 ## Reverb (FairlightFX) — genormaliseerd v → Inspector-waarde
 
@@ -62,5 +69,5 @@ Gemeten in Resolve 21.1 met v = 0, 0.1, 0.25, 0.4, 0.75, 1 (en standaardwaarden)
   mix → Dry/Wet, algoritme + grootte → kamerafmetingen (tabel in `aaf2drt.py`), laagste van HF Cut en LP →
   high Freq van early/late (−12 dB bij HF Cut, −18 dB bij LP), input → clipvolume. Diffusion heeft geen
   equivalent. Resolve herberekent Room Size en Room Ratio uit de afmetingen.
-- D-Verb op een **spoor** (Audio Track Effect Container) wordt nog niet vertaald: daarvoor moeten de inserts in
-  `FLStudioModelBA` ontcijferd worden.
+- D-Verb op een **spoor**: OperationGroup `Audio Track Effect Container` rond het spoor; segment 1 bevat een
+  OperationGroup met `_ATN_AUDIO_RTAS_EFFECT_CHUNK` (zelfde formaat als op een clip) en `INSERT` (slot).

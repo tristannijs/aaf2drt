@@ -55,6 +55,7 @@ jobs:
             --add-data "engine/template.drt:." \
             --add-data "engine/fl_base.json:." \
             --add-data "engine/fl_reverb.bin:." \
+            --add-data "engine/fl_trackreverb.bin:." \
             --add-data "app/index.html:." \
             --collect-all imageio_ffmpeg \
             --collect-all webview \

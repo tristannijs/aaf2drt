@@ -135,6 +135,23 @@ DVERB_ALGOS = ['Hall', 'Church', 'Plate', 'Room 1', 'Room 2', 'Ambient', 'Non-Li
 DVERB_SIZES = ['Small', 'Medium', 'Large']
 
 
+def track_plugin(g):
+    """Plugin inserted on an Avid audio track (inside an 'Audio Track Effect Container'), or None."""
+    while type(g).__name__ == 'OperationGroup':
+        attrs = {}
+        try:
+            for t in g.get('ComponentAttributeList') or []:
+                attrs[t.name] = t.value
+        except Exception:
+            pass
+        if attrs.get('_EFFECT_PLUGIN_NAME'):
+            return {'name': attrs['_EFFECT_PLUGIN_NAME'], 'chunk': attrs.get('_ATN_AUDIO_RTAS_EFFECT_CHUNK'),
+                    'insert': attrs.get('INSERT')}
+        segs = list(g.segments)
+        g = segs[0] if segs else None
+    return None
+
+
 def dverb_params(chunk):
     """Avid D-Verb AudioSuite chunk -> settings. Ten big-endian int32 knob values from offset 56, each a
     position -1..1 (int / 2^31). Calibrated with six exports plus reading the dialog:
@@ -269,16 +286,20 @@ def load(path):
                                'layer': i, 'track_ops': []})
         else:
             # track-level OperationGroup (pan/volume automation on the whole track)
-            track_ops = []
+            track_ops, track_plugins = [], []
             seg = s.segment
             while type(seg).__name__ == 'OperationGroup':
                 track_ops.append(op_params(seg))
-                seg = list(seg.segments)[0]
+                segs = list(seg.segments)
+                if seg.operation is not None and seg.operation.name == 'Audio Track Effect Container':
+                    track_plugins += [p for p in (track_plugin(g) for g in segs[1:]) if p]
+                seg = segs[0]
             if track_ops:
                 items = []
                 flatten(seg, 0, [], items, rate)
             tracks.append({'kind': 'audio', 'name': s.name, 'slot': s.slot_id, 'rate': rate, 'items': items,
-                           'track_ops': track_ops, 'phys': getattr(s, 'physical_track_number', None)})
+                           'track_ops': track_ops, 'track_plugins': track_plugins,
+                           'phys': getattr(s, 'physical_track_number', None)})
     return f, top, tc_start, tracks
 
 

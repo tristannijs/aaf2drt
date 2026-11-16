@@ -372,7 +372,26 @@ def main():
                 elif R == 'clip': pos, align = 1, 1
                 else: pos, align = 3, 3
                 xml.append(gen.ti_transition(tc + it['start'], ln, align, pos))
-        audio_tracks.append({'name': t['name'], 'subtype': 0 if stereo_track else 1, 'items_xml': xml})
+        reverb = None
+        for pl in t.get('track_plugins') or []:
+            tnotes = []
+            if pl['name'] == 'D-Verb' and pl.get('chunk') and reverb is None:
+                d = aafmodel.dverb_params(pl['chunk'])
+                if d is not None:
+                    reverb = dverb_to_fairlight(d, tnotes)
+                    tnotes.append('D-Verb %s %s, decay %.2f s, mix %d%% -> Fairlight Reverb (insert)'
+                                  % (d['algo'], d['size'], min(d['decay'], 99), round(d['mix'])))
+                    if abs(d['input_db']) > 0.05:
+                        tnotes.append('D-Verb input %.1f dB niet meegenomen (spoor-insert)' % d['input_db'])
+                else:
+                    tnotes.append('D-Verb: instellingen onleesbaar')
+            else:
+                tnotes.append('spoor-plugin niet vertaald: %s' % pl['name'])
+            for n_ in tnotes:
+                log('  %s (spoor): %s' % (t['name'], n_))
+            report.append({'track': t['name'], 'status': 'track_fx', 'notes': tnotes})
+        audio_tracks.append({'name': t['name'], 'subtype': 0 if stereo_track else 1, 'items_xml': xml,
+                             'reverb': reverb})
 
     log('Video ...')
     vfields = lambda start: codec.blob_encode(codec.pb_encode([[1, 2, [[1, 2, [[21, 0, start]]], [4, 0, 1], [9, 0, 1]]],
