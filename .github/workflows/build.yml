@@ -50,6 +50,7 @@ jobs:
           pyinstaller --noconfirm --clean --windowed \
             --name "AAF naar Resolve" \
             --osx-bundle-identifier be.tristannijs.aaf2drt \
+            --icon app/icon.icns \
             --paths engine --paths app \
             --hidden-import aaf2drt --hidden-import server \
             --add-data "engine/template.drt:." \
