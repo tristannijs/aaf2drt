@@ -97,7 +97,7 @@ def plan_clip(sourceclips, length_frames, fps=24):
     dur = Fraction(length_frames, fps)
     picks = []
     for sc in sourceclips:
-        r = aafmodel.resolve_source(sc)
+        r = aafmodel.resolve_source(sc, Fraction(fps))
         if r is None:
             return None
         master, mslot, mpos = master_of(r['chain'])

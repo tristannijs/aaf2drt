@@ -386,7 +386,7 @@ def main():
         xml = []
         for i, it in enumerate(items):
             if it['kind'] == 'clip':
-                r = aafmodel.resolve_source(it['clips'][0])
+                r = aafmodel.resolve_source(it['clips'][0], t.get('rate') or RATE)
                 if not r or not aafmodel.file_url(r['mob']):
                     continue
                 path = polyplan.mac_path(aafmodel.file_url(r['mob']))
