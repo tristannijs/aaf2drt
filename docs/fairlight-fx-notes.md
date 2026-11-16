@@ -71,3 +71,13 @@ Gemeten in Resolve 21.1 met v = 0, 0.1, 0.25, 0.4, 0.75, 1 (en standaardwaarden)
   equivalent. Resolve herberekent Room Size en Room Ratio uit de afmetingen.
 - D-Verb op een **spoor**: OperationGroup `Audio Track Effect Container` rond het spoor; segment 1 bevat een
   OperationGroup met `_ATN_AUDIO_RTAS_EFFECT_CHUNK` (zelfde formaat als op een clip) en `INSERT` (slot).
+
+## Plugins van derden (AAX → AU)
+
+- Clip-FX-container (onder `FL::ClipFX`): `[f\x88fw][1][size][5][N]` + N records. Record: `[kanaal][lengte payload]
+  [soort: 1 = AU, 2 = FairlightFX]` + 412 bytes kop (plugin-id op +12, bv. `au:1399090297:1349280628`;
+  weergavenaam op +384) + payload. Voor een AU is de payload de ClassInfo-plist (manufacturer, subtype, type
+  `aufx`, version, `jucePluginState`); Resolve neemt een gegenereerde record ongewijzigd over.
+- JUCE-plugins zetten in AAX, AU en VST3 dezelfde state (`VC2!` + lengte + XML). In de AAF zit die in
+  `_AUDIO_SUITE_EFFECT_0_ALL_CHUNKS`; AAX-fabrikant- en product-id zijn dezelfde getallen als AU manufacturer
+  en subtype. Getest met Soundly Place it 1.1.4.

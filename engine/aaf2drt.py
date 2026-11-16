@@ -224,8 +224,11 @@ def dverb_to_fairlight(d, notes):
 
 
 def clip_plugins(ops, notes):
-    """Real-time AudioSuite plugins on a clip -> (extra dB, clip EQ bands or None, Fairlight reverb or None)."""
+    """Real-time AudioSuite plugins on a clip -> (extra dB, clip EQ bands or None, clip FX records).
+    Avid's own plugins are translated (EQ3 -> clip EQ, D-Verb -> Fairlight Reverb); third-party JUCE plugins
+    keep their exact settings and go to the Audio Unit version of the same plugin."""
     extra_db, bands, reverb = 0.0, None, None
+    fx = []
     for o in ops or []:
         if o.get('op') != 'Audio Suite Plugin':
             continue
@@ -239,19 +242,27 @@ def clip_plugins(ops, notes):
             if d is None:
                 notes.append('D-Verb: instellingen onleesbaar'); continue
             reverb = dverb_to_fairlight(d, notes)
+            fx.append(gen.reverb_record(reverb))
             extra_db += d['input_db']
             notes.append('D-Verb %s %s, decay %.2f s, mix %d%% -> Fairlight Reverb'
                          % (d['algo'], d['size'], min(d['decay'], 99), round(d['mix'])))
+        elif name and aafmodel.juce_state(o.get('_AUDIO_SUITE_EFFECT_0_ALL_CHUNKS')) \
+                and str(o.get('_EFFECT_PLUGIN_MANUFACTURER_ID', '')).isdigit() \
+                and str(o.get('_EFFECT_PLUGIN_PRODUCT_ID', '')).isdigit():
+            st = aafmodel.juce_state(o['_AUDIO_SUITE_EFFECT_0_ALL_CHUNKS'])
+            fx.append(gen.au_record(o['_EFFECT_PLUGIN_MANUFACTURER_ID'], o['_EFFECT_PLUGIN_PRODUCT_ID'], name, st))
+            notes.append('%s meegenomen als Audio Unit met dezelfde instellingen (moet in Resolve geïnstalleerd zijn)'
+                         % name)
         elif name:
             notes.append('plugin niet vertaald: %s' % name)
-    return extra_db, bands, reverb
+    return extra_db, bands, fx
 
 
 def audio_effects(it, plan, pan_pts, notes=None):
     """Clip gain (constant + Avid volume keyframes), track pan and clip EQ -> EffectFiltersBA hex."""
     notes = [] if notes is None else notes
     db, kf = aafmodel.gain_db(it['ops'])
-    plug_db, eq_bands, reverb = clip_plugins(it['ops'], notes)
+    plug_db, eq_bands, fx_records = clip_plugins(it['ops'], notes)
     db += plug_db
     head = float(plan['head']) * FPS             # file frame at the (untrimmed) clip start
     L = it['length']
@@ -278,7 +289,7 @@ def audio_effects(it, plan, pan_pts, notes=None):
             if not groups: groups.append((124, [], 5))
             groups.append((144, [(96, gen.keyframe_bytes_generic(pts))], 1))
     extra = gen.clip_eq_effects(eq_bands) if eq_bands else None
-    clipfx = gen.clip_fx_reverb(reverb) if reverb else None
+    clipfx = gen.clip_fx(fx_records) if fx_records else None
     return (gen.effect_blob(groups, extra) if (groups or extra) else None), clipfx
 
 

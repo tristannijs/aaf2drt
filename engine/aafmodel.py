@@ -106,7 +106,8 @@ def op_params(og):
     if out['op'] == 'Audio Suite Plugin':      # real-time AudioSuite on a clip: keep the plugin state
         try:
             for t in og.get('ComponentAttributeList') or []:
-                if t.name in ('_EFFECT_PLUGIN_NAME', '_AUDIO_SUITE_EFFECT_0_ALL_CHUNKS'):
+                if t.name.startswith('_EFFECT_PLUGIN') or t.name.startswith('_AS_EFFECT_0') \
+                        or t.name == '_AUDIO_SUITE_EFFECT_0_ALL_CHUNKS':
                     out[t.name] = t.value
         except Exception:
             pass
@@ -150,6 +151,20 @@ def track_plugin(g):
         segs = list(g.segments)
         g = segs[0] if segs else None
     return None
+
+
+def juce_state(chunk):
+    """The JUCE plugin state ('VC2!' + length + XML) inside an AAX chunk, or None. JUCE plugins store the same
+    state in every format, so it can go into the AU / VST3 version of the plugin unchanged."""
+    import struct as _st
+    b = bytes(chunk or b'')
+    i = b.find(b'VC2!')
+    if i < 0 or i + 8 > len(b):
+        return None
+    n = _st.unpack('<I', b[i + 4:i + 8])[0]
+    if i + 8 + n > len(b) or n > 10_000_000:
+        return None
+    return b[i:i + 8 + n]
 
 
 def dverb_params(chunk):

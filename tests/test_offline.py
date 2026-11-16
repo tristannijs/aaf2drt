@@ -120,3 +120,17 @@ def test_existing_wav_reused_only_for_same_segment():
         assert not aaf2drt.wav_matches(p, size, 999999, "4.45/8/2")   # same size, other source position
         assert not aaf2drt.wav_matches(p, size, 123456, "4.45/9/2")
         assert not aaf2drt.wav_matches(os.path.join(d, "missing.wav"), size, 123456, "4.45/8/2")
+
+
+def test_juce_plugin_to_au_record():
+    import gen, aafmodel, zlib, struct, plistlib
+    xml = b'<?xml version="1.0"?><X a="1"/>\0'
+    state = b'VC2!' + struct.pack('<I', len(xml)) + xml
+    chunk = b'\xe8\0\0\0' + b'junk' * 70 + state + b'\0' * 8            # AAX chunk with the JUCE state inside
+    assert aafmodel.juce_state(chunk) == state and aafmodel.juce_state(b'nothing') is None
+    raw = zlib.decompress(gen.clip_fx([gen.au_record('1399090297', '1349280628', 'Soundly Place it', state)])[4:])
+    assert raw[:4] == b'f\x88fw' and struct.unpack_from('<II', raw, 12) == (5, 1)
+    ch, ln, kind = struct.unpack_from('<III', raw, 20)
+    assert kind == 1 and raw[32:56] == b'au:1399090297:1349280628' and len(raw) == 20 + 12 + 412 + ln
+    pl = plistlib.loads(raw[444:])
+    assert pl['jucePluginState'] == state and pl['manufacturer'] == 1399090297 and pl['type'] == 0x61756678

@@ -15,6 +15,7 @@ leest de AAF zelf en bouwt de timeline rechtstreeks op:
 - **het gekozen kanaal** staat per clip al juist ingesteld in Resolve, en stereo clips blijven stereo;
 - **gain, volumelijnen, pan en fades** uit Avid gaan mee;
 - **EQ3 7-Band** (real-time AudioSuite op een clip) wordt de Equalizer van de clip in Resolve;
+- **plugins van derden** op een clip (real-time AudioSuite) die met JUCE gebouwd zijn, zoals Soundly Place it, gaan met exact dezelfde instellingen mee naar de Audio Unit-versie van die plugin in Resolve (die moet wel op je Mac geïnstalleerd zijn);
 - **D-Verb** op een clip (real-time AudioSuite) of als insert op een spoor wordt een Fairlight Reverb op die clip of dat spoor, met dezelfde decay, pre-delay, mix en ongeveer dezelfde ruimte en kleur (een benadering: het blijven twee verschillende reverbs);
 - **beeld**: de originele MXF's, met zoom/positie, snelheid en mattes;
 - een **Fairlight-mixer** die past bij de sporen van je sequence (mono/stereo per spoor);

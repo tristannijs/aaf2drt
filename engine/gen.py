@@ -141,20 +141,54 @@ def _res(name):
     return os.path.join(getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__))), name)
 
 
-def clip_fx_reverb(values):
-    """Fairlight Reverb as clip FX: the stored plugin state (fl_reverb.bin, from Resolve 21) with the named
-    parameters set to normalized values. Returns the qCompress block for the FL::ClipFX entry."""
+FX_MAGIC = b'f\x88fw'
+
+
+def _fx_container(records):
+    """Clip FX container (stored under FL::ClipFX): [magic][1][size][5][N] + N plugin records, qCompressed.
+    A record is [channel u32][payload length u32][kind u32: 1 = AU, 2 = FairlightFX] + 412-byte header
+    (plugin id at +12, window geometry, display name at +384) + payload."""
     import zlib
-    raw = bytearray(open(_res('fl_reverb.bin'), 'rb').read())
-    o = 516
-    while o + 68 <= len(raw):
-        name = raw[o:o + 64].split(b'\0')[0].decode()
+    body = struct.pack('<II', 5, len(records)) + b''.join(records)
+    raw = FX_MAGIC + struct.pack('<II', 1, len(body)) + body
+    return struct.pack('>I', len(raw)) + zlib.compress(raw)
+
+
+def reverb_record(values, channel=0):
+    """Fairlight Reverb record, from the stored plugin state (fl_reverb.bin, Resolve 21), parameters set."""
+    rec = bytearray(open(_res('fl_reverb.bin'), 'rb').read()[20:])
+    struct.pack_into('<I', rec, 0, channel)
+    o = 496                                  # 64-byte name + float32 LE, normalized 0..1
+    while o + 68 <= len(rec):
+        name = rec[o:o + 64].split(b'\0')[0].decode('latin1')
         if not name:
             break
         if name in values:
-            struct.pack_into('<f', raw, o + 64, max(0.0, min(1.0, float(values[name]))))
+            struct.pack_into('<f', rec, o + 64, max(0.0, min(1.0, float(values[name]))))
         o += 68
-    return struct.pack('>I', len(raw)) + zlib.compress(bytes(raw))
+    return bytes(rec)
+
+
+def au_record(manufacturer, subtype, display_name, juce_state, channel=0, au_type=0x61756678):
+    """Third-party Audio Unit (default type 'aufx') with a JUCE plugin state: the plist Resolve keeps as the
+    AU ClassInfo. The record header comes from a Resolve 21 export (fl_aurecord.bin)."""
+    import plistlib
+    pl = plistlib.dumps({'jucePluginState': juce_state, 'manufacturer': int(manufacturer), 'name': 'Untitled',
+                         'subtype': int(subtype), 'type': au_type, 'version': 0})
+    hdr = bytearray(open(_res('fl_aurecord.bin'), 'rb').read())
+    struct.pack_into('<III', hdr, 0, channel, len(pl), 1)
+    ident = ('au:%d:%d' % (int(manufacturer), int(subtype))).encode()
+    hdr[12:12 + 256] = ident.ljust(256, b'\0')[:256]
+    hdr[384:424] = display_name.encode('utf-8', 'replace')[:39].ljust(40, b'\0')
+    return bytes(hdr) + pl
+
+
+def clip_fx(records):
+    return _fx_container(records)
+
+
+def clip_fx_reverb(values):
+    return _fx_container([reverb_record(values)])
 
 
 def ti_fields(start, link=None, clipfx=None):
