@@ -107,12 +107,15 @@ function show(s){
   const box=document.getElementById("summary"); box.style.display="block";
   const rows=(s.report&&s.report.rows)||[]; const drt=(s.report&&s.report.drt)||[];
   if(s.returncode!==0||!drt.length){box.innerHTML='<div class="big msg err">Er ging iets mis. Kijk in het logboek.</div><div class="next"><button class="b" onclick="api(\'/bundle\',{out:S.out})">Rapport opslaan</button> <span class="hint">voor een melding op GitHub (zonder media)</span></div>'; document.getElementById("logbox").open=true; return;}
-  const ok=rows.filter(r=>r.status==="ok").length, bad=rows.length-ok;
-  const files=new Set(rows.filter(r=>r.file&&r.status==="ok").map(r=>r.file)).size;
-  box.innerHTML=`<div class="big">Klaar: <b>${ok}</b> audioclips in <b>${files}</b> poly-WAV's`+(bad?`, <span class="msg err">${bad} niet gevonden</span>`:"")+`.</div>
+  const clips=rows.filter(r=>r.status!=="track_fx"), fx=rows.filter(r=>r.status==="track_fx");
+  const ok=clips.filter(r=>r.status==="ok").length, bad=clips.length-ok;
+  const fxok=fx.filter(r=>r.translated).length, fxno=fx.length-fxok;
+  const files=new Set(clips.filter(r=>r.file&&r.status==="ok").map(r=>r.file)).size;
+  box.innerHTML=`<div class="big">Klaar: <b>${ok}</b> audioclips in <b>${files}</b> poly-WAV's`+(bad?`, <span class="msg err">${bad} niet gevonden</span>`:"")+`.</div>`+
+   (fx.length?`<div>Spoor-effecten: ${fxok} vertaald`+(fxno?`, <span class="msg err">${fxno} niet</span> (zie rapport)`:"")+`.</div>`:"")+`
    <div>Timeline: <code>${drt[0]}</code></div>
    <ol><li>Open of maak een project in DaVinci Resolve, met dezelfde framerate als je Avid-sequence.</li><li>Bestand &gt; Importeren &gt; Timeline… en kies de .drt hierboven.</li>
-   <li>Geef je mixer de hele uitvoermap (de .drt + de map <code>Audio</code>), plus je video-media.</li></ol>
+   <li>Geef je mixer de hele uitvoermap (de .drt + de mappen <code>Audio</code> en <code>Video</code>); zonder <code>Video</code> ook je Avid MediaFiles.</li></ol>
    <div class="next"><button class="b" onclick="api('/reveal',{path:S.out})">Toon in Finder</button>
    <button class="b" onclick="api('/bundle',{out:S.out})" title="Logboek en rapport in één zip, zonder media of AAF">Rapport opslaan</button></div>`;
 }

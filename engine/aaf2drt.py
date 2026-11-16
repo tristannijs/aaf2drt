@@ -138,6 +138,7 @@ def probe_audio(path):
 # codecs that can be cut on any frame without re-encoding AND written back as Avid OP-Atom MXF (what the media pool
 # entry describes; a .mov behind an 'MXF OP-Atom' entry stays offline in Resolve)
 TRIM_CODECS = ('dnxhd',)
+AVID_MANUFACTURER = '1147758441'           # 'Digi': Avid's own AAX plugins (D-Verb, EQ3, Pro Compressor, ...)
 
 
 def frames_to_tc(frames, fps):
@@ -408,9 +409,12 @@ def main():
     audio_tracks = []
     report = []
     log('Audio ...')
+    n_audio = 0
     for t in tracks:
         if t['kind'] != 'audio':
             continue
+        n_audio += 1
+        label = t['name'] or 'A%d' % n_audio          # unnamed Avid tracks: A1, A2, ... in log and report
         stereo_track = aafmodel.track_format(slots[t['slot']]) == 2
         items = aafmodel.resolve_edits(t['items'])
         pan_pts = aafmodel.track_pan_points(t['track_ops'], slots[t['slot']].segment.length or 0)
@@ -421,18 +425,18 @@ def main():
                 if plan is not None and plan.get('error'):
                     log('  clip buiten mediabestand: %s  (positie %.2fs, bestand %ss)  %s'
                         % (plan['master'], plan['file_pos'], '%.2f' % plan['file_dur'] if plan['file_dur'] is not None else '?', plan['path']))
-                    report.append({'track': t['name'], 'start': tc + it['r_start'], 'status': 'out_of_range',
+                    report.append({'track': label, 'start': tc + it['r_start'], 'status': 'out_of_range',
                                    'file': plan['path'], 'file_pos': plan['file_pos'], 'file_dur': plan['file_dur']})
                     continue
                 if plan is None or any(c['path'] is None for c in plan['channels']):
-                    report.append({'track': t['name'], 'start': tc + it['r_start'], 'status': 'unresolved'})
+                    report.append({'track': label, 'start': tc + it['r_start'], 'status': 'unresolved'})
                     continue
                 # trims at transitions move the clip head inside the planned segment
                 key = (tuple((c['path'], float(c['file_offset'])) for c in plan['channels']), float(plan['seg_dur']))
                 missing = [c['path'] for c in plan['channels'] if not os.path.exists(local(c['path']))]
                 if missing and key not in rendered:
                     log('  ontbrekende media: %s' % missing[0])
-                    report.append({'track': t['name'], 'start': tc + it['r_start'], 'status': 'missing', 'file': missing[0]})
+                    report.append({'track': label, 'start': tc + it['r_start'], 'status': 'missing', 'file': missing[0]})
                     continue
                 if key not in rendered:
                     p0 = plan['channels'][plan['pick_index']]['path']
@@ -469,11 +473,11 @@ def main():
                          media_frames=int(round(info['frames'] / info['sr'] * FPS)), codes=codes, stereo=stereo,
                          effects_hex=effects_hex, clipfx=clipfx)
                 xml.append(gen.ti_audio_clip(c))
-                report.append({'track': t['name'], 'start': tc + it['r_start'], 'file': fn,
+                report.append({'track': label, 'start': tc + it['r_start'], 'file': fn,
                                'channel': plan['pick_index'] + 1, 'channels': info['ch'], 'status': 'ok',
                                **({'notes': notes} if notes else {})})
                 for n_ in notes:
-                    log('  %s @ %s: %s' % (t['name'], tc + it['r_start'], n_))
+                    log('  %s @ %s: %s' % (label, tc + it['r_start'], n_))
             elif it['kind'] == 'transition':
                 L = items[i - 1]['kind'] if i > 0 else None
                 R = items[i + 1]['kind'] if i + 1 < len(items) else None
@@ -484,33 +488,40 @@ def main():
                 xml.append(gen.ti_transition(tc + it['start'], ln, align, pos))
         insert = None
         for pl in t.get('track_plugins') or []:
-            tnotes = []
+            tnotes, done = [], False
+            avid_own = str(pl.get('manufacturer') or '') == AVID_MANUFACTURER
             if insert is not None:
-                tnotes.append('spoor-plugin %s niet meegenomen: alleen het eerste insert-vak wordt gevuld' % pl['name'])
+                tnotes.append('%s (insert %s) niet meegenomen: voorlopig wordt alleen het eerste insert-vak gevuld'
+                              % (pl['name'], (pl.get('insert') or 0) + 1))
             elif pl['name'] == 'D-Verb' and pl.get('chunk'):
                 d = aafmodel.dverb_params(pl['chunk'])
                 if d is not None:
-                    insert = flmodel.reverb_insert(dverb_to_fairlight(d, tnotes))
+                    insert = flmodel.reverb_insert(dverb_to_fairlight(d, tnotes)); done = True
                     tnotes.append('D-Verb %s %s, decay %.2f s, mix %d%% -> Fairlight Reverb (insert)'
                                   % (d['algo'], d['size'], min(d['decay'], 99), round(d['mix'])))
                     if abs(d['input_db']) > 0.05:
                         tnotes.append('D-Verb input %.1f dB niet meegenomen (spoor-insert)' % d['input_db'])
                 else:
                     tnotes.append('D-Verb: instellingen onleesbaar')
+            elif avid_own:
+                # Avid's own plugins (EQ3, Pro Compressor, ...) exist only as AAX: nothing to load in Resolve
+                tnotes.append('%s op het spoor is nog niet vertaald (Avid-plugin, bestaat niet in Resolve)'
+                              % pl['name'])
             elif str(pl.get('manufacturer') or '').isdigit() and str(pl.get('product') or '').isdigit():
                 # third-party plugin: same plugin as VST3 (JUCE class id). Avid's AAF carries no settings for
                 # third-party track plugins, so unless it does, the plugin comes in with its default settings.
                 st = aafmodel.juce_state(pl.get('chunk'))
                 insert = flmodel.plugin_insert(flmodel.juce_vst3_id(pl['manufacturer'], pl['product']), pl['name'],
-                                               flmodel.juce_vst3_state(st))
+                                               flmodel.juce_vst3_state(st)); done = True
                 tnotes.append('%s als VST3-insert meegenomen, %s (moet in Resolve geïnstalleerd zijn)'
                               % (pl['name'], 'met dezelfde instellingen' if st else
                                  'met standaardinstellingen: Avid zet de instellingen van spoor-plugins niet in de AAF'))
             else:
                 tnotes.append('spoor-plugin niet vertaald: %s' % pl['name'])
             for n_ in tnotes:
-                log('  %s (spoor): %s' % (t['name'], n_))
-            report.append({'track': t['name'], 'status': 'track_fx', 'notes': tnotes})
+                log('  %s (spoor): %s' % (label, n_))
+            report.append({'track': label, 'status': 'track_fx', 'plugin': pl['name'], 'translated': done,
+                           'notes': tnotes})
         audio_tracks.append({'name': t['name'], 'subtype': 0 if stereo_track else 1, 'items_xml': xml,
                              'insert': insert})
 
