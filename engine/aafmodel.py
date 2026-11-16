@@ -55,14 +55,18 @@ def segment_at(seg, pos):
     return seg, pos
 
 
-def resolve_source(clip, depth=0):
+def resolve_source(clip, ctx_rate=None):
     """Follow a SourceClip down to a file SourceMob.
-    Returns dict(mob, slot_id, pos_seconds, rate, chain) or None.  pos = position (s) in the file mob's slot."""
-    pos = Fraction(clip.start or 0)
+    Returns dict(mob, slot_id, pos_seconds, rate, chain) or None.  pos = position (s) in the file mob's slot.
+
+    AAF: a SourceClip's StartTime is in edit units of the slot that CONTAINS the clip (ctx_rate), not of
+    the slot it references. Avid mixes rates (25 fps sequence -> 100 Hz subclip/master sound slots ->
+    25 fps file mob), so every step is converted through seconds.  ctx_rate = edit rate of the track the
+    clip sits on; without it the referenced slot's rate is assumed (only right when rates are equal)."""
     mob = clip.mob
     slot_id = clip.slot_id
+    start = Fraction(clip.start or 0)
     chain = []
-    rate_ctx = None
     for _ in range(12):
         if mob is None:
             return None
@@ -73,19 +77,17 @@ def resolve_source(clip, depth=0):
         if slot is None:
             return None
         rate = frac(slot.edit_rate)
+        sec = start / (ctx_rate or rate)          # position in this slot, in seconds
+        pos = sec * rate                          # ... and in this slot's edit units
         chain.append((mob, slot_id, pos, rate))
         if is_file_mob(mob):
-            return {'mob': mob, 'slot_id': slot_id, 'pos': pos / rate, 'rate': rate, 'chain': chain}
+            return {'mob': mob, 'slot_id': slot_id, 'pos': sec, 'rate': rate, 'chain': chain}
         comp, off = segment_at(slot.segment, int(pos))
         if comp is None or type(comp).__name__ != 'SourceClip' or comp.mob is None:
             return None
-        # off is in this slot's edit units, comp.start in the referenced slot's: rescale when rates differ
-        try:
-            child = comp.mob.slot_at(comp.slot_id)
-        except Exception:
-            child = next((s for s in comp.mob.slots if s.slot_id == comp.slot_id), None)
-        crate = frac(child.edit_rate) if child is not None else rate
-        pos = Fraction(comp.start or 0) + (off + (pos - int(pos))) * crate / rate
+        # comp.start is in this slot's units (it contains comp); add the offset into comp, same units
+        start = Fraction(comp.start or 0) + off + (pos - int(pos))
+        ctx_rate = rate
         mob = comp.mob
         slot_id = comp.slot_id
     return None
