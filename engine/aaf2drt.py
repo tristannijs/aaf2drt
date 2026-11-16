@@ -135,7 +135,9 @@ def probe_audio(path):
     return (int(m.group(1)) if m else 48000), 24
 
 
-INTRA_CODECS = ('dnxhd', 'dnxhr', 'prores', 'mjpeg', 'rawvideo', 'v210', 'dvvideo', 'jpeg2000', 'cfhd')
+# codecs that can be cut on any frame without re-encoding AND written back as Avid OP-Atom MXF (what the media pool
+# entry describes; a .mov behind an 'MXF OP-Atom' entry stays offline in Resolve)
+TRIM_CODECS = ('dnxhd',)
 
 
 def frames_to_tc(frames, fps):
@@ -147,20 +149,21 @@ def frames_to_tc(frames, fps):
 def make_video_segments(src, info, ranges, video_dir, gap_seconds=1.0):
     """Trimmed copies of one video file: the used ranges (media frames, handles included) are merged when they
     overlap or lie less than gap_seconds apart, and each stretch is cut without re-encoding (stream copy) into
-    a .mov with the matching start timecode. Long-GOP codecs cannot be cut on any frame: those are copied whole.
+    an Avid OP-Atom MXF with the matching start timecode (DNxHD/DNxHR; other codecs are copied whole).
     Returns [(first frame, end frame, mac path, info of the copy)]."""
     import shutil
     os.makedirs(video_dir, exist_ok=True)
     mf = info.get('fps') or FPS
     total = int(info.get('frames') or 0)
     stem = os.path.splitext(os.path.basename(src))[0]
-    if (info.get('codec') or '').lower() not in INTRA_CODECS:
+    def whole():
         dst = os.path.join(video_dir, os.path.basename(src))
         if not (os.path.exists(dst) and os.path.getsize(dst) == os.path.getsize(src)):
-            log('  video kopiëren (volledig, %s kan niet zonder hercoderen ingekort worden): %s'
-                % (info.get('codec'), os.path.basename(src)))
+            log('  video kopiëren (volledig, %s wordt niet ingekort): %s' % (info.get('codec'), os.path.basename(src)))
             shutil.copy2(src, dst + '.part'); os.replace(dst + '.part', dst)
         return [(0, total or 10 ** 9, macp(dst), info)]
+    if (info.get('codec') or '').lower() not in TRIM_CODECS or not src.lower().endswith('.mxf'):
+        return whole()
     merged = []
     for a, b in sorted(ranges):
         if merged and a <= merged[-1][1] + gap_seconds * mf:
@@ -176,7 +179,7 @@ def make_video_segments(src, info, ranges, video_dir, gap_seconds=1.0):
             a, b = max(0, a), min(total, b)
         if b <= a:
             continue
-        dst = os.path.join(video_dir, '%s_%03d.mov' % (stem, k + 1))
+        dst = os.path.join(video_dir, '%s_%03d.mxf' % (stem, k + 1))
         tcs = frames_to_tc(tc0 + a, mf)
         seg = dict(info, tc=tcs, frames=b - a)
         ok = False
@@ -187,10 +190,16 @@ def make_video_segments(src, info, ranges, video_dir, gap_seconds=1.0):
             log('  video inkorten: %s frames %d-%d (%s)' % (os.path.basename(src), a, b, tcs))
             cmd = [ffmpeg_bin(), '-hide_banner', '-nostdin', '-y', '-ss', '%.6f' % (a / mf), '-i', src,
                    '-map', '0:v:0', '-frames:v', str(b - a), '-c', 'copy', '-timecode', tcs,
-                   '-f', 'mov', dst + '.part']
+                   '-f', 'mxf_opatom', dst + '.part']
             p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if p.returncode:
-                raise RuntimeError('ffmpeg kon %s niet inkorten: %s' % (src, p.stderr.decode(errors='replace')[-400:]))
+                log('  video inkorten lukte niet (%s), volledige kopie: %s'
+                    % (p.stderr.decode(errors='replace').strip().splitlines()[-1:] or ['?'], os.path.basename(src)))
+                try:
+                    os.remove(dst + '.part')
+                except OSError:
+                    pass
+                return whole()
             os.replace(dst + '.part', dst)
         seg['mtime'] = os.path.getmtime(dst)
         out.append((a, b, macp(dst), seg))

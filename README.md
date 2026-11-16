@@ -69,11 +69,12 @@ Python, ffmpeg en alle onderdelen zitten in de app. Je hoeft niets anders te ins
    **File → Import → Timeline…** met de .drt uit de uitvoermap.
 
 De uitvoermap bevat de .drt, een map `Audio` met de poly-WAV's, een map `Video` met de ingekorte beeldbestanden
-(.mov, zelfde codec en tijdcode als het origineel) en `aaf2drt_report.json`. Geef de mixer de volledige uitvoermap.
+(Avid OP-Atom MXF, zelfde codec en tijdcode als het origineel) en `aaf2drt_report.json`. Geef de mixer de volledige uitvoermap.
 Zet je het kopiëren van beeld uit, dan verwijst de timeline naar de originele bestanden in je Avid MediaFiles.
 
-Beeld wordt zonder hercoderen ingekort; dat kan alleen bij codecs waarin elk beeld op zichzelf staat (DNxHD/DNxHR,
-ProRes en dergelijke, wat Avid zelf gebruikt). Andere codecs worden volledig gekopieerd. Stukken van hetzelfde
+Beeld wordt zonder hercoderen ingekort; dat gebeurt voor DNxHD/DNxHR, wat Avid zelf meestal aanmaakt. Andere
+codecs worden volledig gekopieerd. Finder kan DNxHD-bestanden vaak niet tonen zonder de codecs van Avid; Resolve
+leest ze wel. Stukken van hetzelfde
 bestand die minder dan een seconde uit elkaar liggen, worden samen in één bestand gezet.
 
 ## Beperkingen
