@@ -106,3 +106,17 @@ def test_track_reverb_insert():
     assert len(two) - base == 5146
     secs = [s[1] for s in flmodel._sections(two)[0]]
     assert secs.index('EffectPresets') == secs.index('EffectContext') + 1
+
+
+def test_existing_wav_reused_only_for_same_segment():
+    import numpy as np
+    import aaf2drt
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "x.wav")
+        s = np.zeros((4800, 2), dtype=np.int32)
+        aaf2drt.write_bwf(p, s, 48000, 24, 123456, ["A", "B"], description="4.45/8/2")
+        size = os.path.getsize(p)
+        assert aaf2drt.wav_matches(p, size, 123456, "4.45/8/2")
+        assert not aaf2drt.wav_matches(p, size, 999999, "4.45/8/2")   # same size, other source position
+        assert not aaf2drt.wav_matches(p, size, 123456, "4.45/9/2")
+        assert not aaf2drt.wav_matches(os.path.join(d, "missing.wav"), size, 123456, "4.45/8/2")

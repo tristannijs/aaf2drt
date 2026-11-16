@@ -104,6 +104,26 @@ def write_bwf(path, samples, sr, bits, timeref, names, description=''):
         fh.write(b'RIFF' + struct.pack('<I', len(body) + 4) + b'WAVE' + bytes(body))
 
 
+def wav_matches(path, size, timeref, description):
+    """True when an existing poly-WAV from an earlier run holds exactly this segment: same size and the same
+    bext time reference (tape position of the first sample) and description. Size alone is not enough:
+    a run with other source positions (e.g. an older version) writes files of identical size."""
+    try:
+        if abs(os.path.getsize(path) - size) >= 64:
+            return False
+        with open(path, 'rb') as fh:
+            head = fh.read(12 + 8 + 602)
+        if head[:4] != b'RIFF' or head[8:12] != b'WAVE' or head[12:16] != b'bext':
+            return False
+        bext = head[20:20 + 602]
+        if struct.unpack('<Q', bext[338:346])[0] != int(timeref):
+            return False
+        d = description.encode('ascii', 'replace')[:256]
+        return bext[:256].rstrip(b'\0') == d.rstrip(b'\0')
+    except OSError:
+        return False
+
+
 def probe_audio(path):
     """(sample_rate, bits) of an audio MXF via ffmpeg -i stderr parsing (works without ffprobe)."""
     p = subprocess.run([ffmpeg_bin(), '-hide_banner', '-nostdin', '-i', path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -337,10 +357,11 @@ def main():
                     names = [c.get('name') or 'CH%d' % (k + 1) for k, c in enumerate(plan['channels'])]
                     outp = os.path.join(audio_dir, fn)
                     expected = 44 + 610 + 8 + len(ixml(names)) + 8 + 16 + n * len(plan['channels']) * (bits // 8)
-                    if not args.plan_only and not (os.path.exists(outp) and abs(os.path.getsize(outp) - expected) < 64):
+                    timeref = round(plan['tape_seg_start'] * sr)
+                    if not args.plan_only and not wav_matches(outp, expected, timeref, plan['master'] or ''):
                         cols = [decode_segment(local(c['path']), int(round(c['file_offset'] * sr)), n, sr) for c in plan['channels']]
                         write_bwf(os.path.join(audio_dir, fn), np.stack(cols, axis=1), sr, bits,
-                                  round(plan['tape_seg_start'] * sr), names, description=plan['master'] or '')
+                                  timeref, names, description=plan['master'] or '')
                     info = {'ch': len(plan['channels']), 'sr': sr, 'bits': bits, 'frames': n,
                             'start': float(plan['tape_seg_start'])}
                     iid, bid, mx = gen.mp_audio_item(folder_id, fn, macp(audio_dir), info['ch'], sr, n, info['start'], bits)
