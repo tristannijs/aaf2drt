@@ -168,3 +168,23 @@ def test_multiple_track_inserts():
         o += 2136 if kind == 2 else 424 + ln
     assert heads[:3] == [(0, 0, 2), (0, 1, 1), (0, 2, 2)]
     assert [h[:2] for h in heads[3:]] == [(1, k) for k in range(6)]
+
+
+def test_channel_eq_vectors():
+    """Fairlight channel EQ as per-channel vectors, values as Resolve 21.1 writes them (eq exports)."""
+    bands = [{'on': 1, 'freq': 100, 'slope': 24},
+             {'on': 1, 'type': 'high_shelf', 'freq': 2075, 'gain': 0, 'q': 6},
+             {'on': 1, 'type': 'low_shelf', 'freq': 1000, 'gain': 6, 'q': 0.3},
+             {'on': 1, 'type': 'notch', 'freq': 1223, 'gain': -12.5, 'q': 10.3},
+             {'on': 1, 'type': 'bell', 'freq': 6048, 'gain': 0, 'q': 1.0},
+             {'on': 1, 'freq': 8000, 'slope': 6}]
+    v = flmodel.channel_eq(bands, -9.7)
+    assert v[223] == 1 and v[224] == -97
+    assert [v[241 + i] for i in range(6)] == [100, 2075, 1000, 1223, 6048, 8000]
+    assert [v[249 + i] for i in range(6)] == [6, 3, 1, 4, 2, 5]
+    assert [v[226 + i] for i in range(4)] == [0, 60, -125, 0]
+    assert [v[234 + i] for i in range(4)] == [100, 15, 165, 25]
+    assert v[1214] == 3 and v[1219] == 0 and v[820] == 119 and v[825] == 162
+    x = bytes(flmodel.raw_model('ms', eqs={1: v}))
+    i = x.find(struct.pack('<III', 1, 224, 3))
+    assert struct.unpack_from('<3i', x, i + 12) == (0, -97, -97)

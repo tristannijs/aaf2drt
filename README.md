@@ -24,7 +24,7 @@ leest de AAF zelf en bouwt de timeline rechtstreeks op:
 
 | Plugin in Avid | Op een clip (real-time AudioSuite) | Als insert op een spoor |
 |---|---|---|
-| **EQ3 7-Band** | wordt de Equalizer van de clip | nog niet |
+| **EQ3 7-Band** | wordt de Equalizer van de clip | wordt de EQ van het Fairlight-kanaal (high-pass 30–399 Hz en low-pass 1,4–22 kHz: daarbuiten wordt hij begrensd, het rapport meldt het) |
 | **D-Verb** | wordt een Fairlight Reverb op de clip | wordt een Fairlight Reverb-insert op het spoor |
 | **plugins van derden gebouwd met JUCE** (bv. Soundly Place it) | dezelfde plugin als Audio Unit, met exact dezelfde instellingen | dezelfde plugin als VST3-insert, met de standaardinstellingen: Avid zet de instellingen van plugins van derden op sporen niet in de AAF |
 | andere plugins | niet; staat in het rapport | niet; staat in het rapport |

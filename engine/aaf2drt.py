@@ -256,6 +256,30 @@ def eq3_to_resolve(eq, notes):
             {'on': on(7), 'freq': eq.get('d_frq7')}]
 
 
+def eq3_to_channel_eq(eq, notes):
+    """Avid EQ3 7-Band on a track -> Fairlight channel EQ (flmodel.channel_eq). Same band choice as the clip EQ
+    (two of EQ3's three mid bells); LF/HF become shelves, input + output gain the EQ gain."""
+    b = eq3_to_resolve(eq, notes)
+    slope = lambda k: [6, 12, 18, 24][k] if isinstance(k, int) and 0 <= k < 4 else 12
+    hp, lp = dict(b[0]), dict(b[5])
+    hp['slope'] = slope(eq.get('l_hpfs')); lp['slope'] = slope(eq.get('l_lpfs'))
+    if hp['on'] and not 30 <= (hp['freq'] or 30) <= 399:
+        notes.append('EQ3 high-pass %.0f Hz -> %d Hz (Fairlight: 30-399 Hz)'
+                     % (hp['freq'], min(399, max(30, hp['freq']))))
+    if lp['on'] and not 1400 <= (lp['freq'] or 22000) <= 22000:
+        notes.append('EQ3 low-pass %.0f Hz -> %d Hz (Fairlight: 1,4-22 kHz)'
+                     % (lp['freq'], min(22000, max(1400, lp['freq']))))
+    mids = [dict(x, type=t) for x, t in zip(b[1:5], ('low_shelf', 'bell', 'bell', 'high_shelf'))]
+    for m in mids:
+        if m['on'] and abs(m.get('gain') or 0) > 20:
+            notes.append('EQ3 %+.1f dB bij %.0f Hz -> %+d dB (Fairlight: max 20 dB)'
+                         % (m['gain'], m['freq'], 20 if m['gain'] > 0 else -20))
+    gain = eq.get('d_inpt', 0.0) + eq.get('d_outp', 0.0)
+    if abs(gain) > 20:
+        notes.append('EQ3 in- en uitgangsversterking %+.1f dB -> %+d dB' % (gain, 20 if gain > 0 else -20))
+    return flmodel.channel_eq([hp] + mids + [lp], gain)
+
+
 # D-Verb room -> Fairlight room (length, width, height in m); Fairlight allows L 3-30, W 4-40, H 2-10
 DVERB_ROOMS = {'Hall': [(15, 12, 6), (22, 17, 8), (30, 24, 10)],
                'Church': [(18, 12, 8), (24, 16, 10), (30, 20, 10)],
@@ -486,7 +510,7 @@ def main():
                 elif R == 'clip': pos, align = 1, 1
                 else: pos, align = 3, 3
                 xml.append(gen.ti_transition(tc + it['start'], ln, align, pos))
-        inserts = []
+        inserts, track_eq, eq_slot = [], None, None
         for pl in sorted(t.get('track_plugins') or [], key=lambda q: int(q.get('insert') or 0)):
             tnotes, done, insert = [], False, None
             avid_own = str(pl.get('manufacturer') or '') == AVID_MANUFACTURER
@@ -503,6 +527,12 @@ def main():
                         tnotes.append('D-Verb input %.1f dB niet meegenomen (spoor-insert)' % d['input_db'])
                 else:
                     tnotes.append('D-Verb: instellingen onleesbaar')
+            elif pl['name'] == 'EQ3 7-Band' and pl.get('chunk') and track_eq is None:
+                track_eq = eq3_to_channel_eq(aafmodel.eq3_bands(pl['chunk']), tnotes); done = True
+                eq_slot = len(inserts)
+                tnotes.insert(0, 'EQ3 7-Band -> EQ van het Fairlight-kanaal')
+            elif pl['name'] == 'EQ3 7-Band' and track_eq is not None:
+                tnotes.append('tweede EQ3 op dit spoor niet meegenomen: Fairlight heeft één kanaal-EQ')
             elif avid_own:
                 # Avid's own plugins (EQ3, Pro Compressor, ...) exist only as AAX: nothing to load in Resolve
                 tnotes.append('%s op het spoor is nog niet vertaald (Avid-plugin, bestaat niet in Resolve)'
@@ -522,10 +552,17 @@ def main():
                 inserts.append(insert)
             for n_ in tnotes:
                 log('  %s (spoor): %s' % (label, n_))
-            report.append({'track': label, 'status': 'track_fx', 'plugin': pl['name'], 'translated': done,
-                           'notes': tnotes})
+            row = {'track': label, 'status': 'track_fx', 'plugin': pl['name'], 'translated': done, 'notes': tnotes}
+            report.append(row)
+            if done and insert is None:
+                eq_row = row
+        if track_eq is not None and eq_slot < len(inserts):
+            n_ = 'EQ3 stond in Avid vóór %d andere plugin(s); Fairlight doet de EQ na de inserts (volgorde FX DY EQ, ' \
+                 'aanpasbaar in de mixer)' % (len(inserts) - eq_slot)
+            log('  %s (spoor): %s' % (label, n_))
+            eq_row['notes'].append(n_)
         audio_tracks.append({'name': t['name'], 'subtype': 0 if stereo_track else 1, 'items_xml': xml,
-                             'inserts': inserts})
+                             'inserts': inserts, 'eq': track_eq})
 
     log('Video ...')
     vfields = lambda start: codec.blob_encode(codec.pb_encode([[1, 2, [[1, 2, [[21, 0, start]]], [4, 0, 1], [9, 0, 1]]],

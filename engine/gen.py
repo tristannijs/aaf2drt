@@ -433,7 +433,8 @@ def build(template, timeline_name, video_tracks, audio_tracks, media_items_xml, 
     first_audio = re.search(r'<AudioTrackVec>\s*<Element>\s*<Sm2TiTrack DbId="([^"]+)"', new_seq)
     layout = ''.join('s' if t['subtype'] == 0 else 'm' for t in audio_tracks)
     inserts = {i: t['inserts'] for i, t in enumerate(audio_tracks) if t.get('inserts')}
-    fl_blob = flmodel.qt_blob(layout, ntsc=abs(FPS - FPS_NOM) > 1e-6, inserts=inserts or None)
+    eqs = {i: t['eq'] for i, t in enumerate(audio_tracks) if t.get('eq')}
+    fl_blob = flmodel.qt_blob(layout, ntsc=abs(FPS - FPS_NOM) > 1e-6, inserts=inserts or None, eqs=eqs or None)
     def fix_seq_blob(m):
         q = codec.qt_decode(m.group(1))
         ents = [e for e in q[1] if e[0] not in ('FLStudioModelBA', 'FirstAudioOnlyTrack')]

@@ -6,7 +6,7 @@ stereo-R channels each have their own default values; param 1112 holds the ownin
 index for the first channel of a track (-1 for stereo R). A few global fields hold the
 track count and the first channel of track 2.
 """
-import base64, json, os, struct, sys, zlib
+import base64, json, math, os, struct, sys, zlib
 
 _DATA = None
 def _data():
@@ -28,10 +28,53 @@ def _channels(layout):
 MAX_INSERTS = 6          # Fairlight insert slots per track (Resolve 21.1 shows no more)
 
 
-def raw_model(layout, ntsc=False, reverbs=None, inserts=None):
+# Fairlight channel EQ (6 bands), per-channel vectors as Resolve 21.1 writes them (calibrated by changing one
+# setting at a time in the mixer and exporting). Band i (0..5) uses vector base + i.
+EQ_TOUCHED, EQ_ON, EQ_GAIN = 170, 223, 224           # 170 becomes 1 once the EQ is edited; gain in dB x 10
+EQ_BAND_GAIN, EQ_BAND_Q, EQ_BAND_FREQ, EQ_BAND_TYPE, EQ_BAND_ON = 225, 233, 241, 249, 257
+EQ_BAND_RANGE, EQ_BAND_KNOB, EQ_BAND_SLOPE = 648, 820, 1214
+EQ_TYPES = {'low_shelf': 1, 'bell': 2, 'high_shelf': 3, 'notch': 4, 'lpf': 5, 'hpf': 6}
+EQ_RANGES = [(30, 399), (100, 1500), (450, 8000), (1400, 22000)]     # L, ML, MH, H (Hz)
+EQ_SLOPES = [6, 12, 18, 24]                                         # dB/oct, high- and low-pass
+
+
+def channel_eq(bands, gain_db=0.0):
+    """Fairlight channel EQ -> {vector id: int}. bands: 6 dicts {on, freq, gain (dB), q, type, slope (dB/oct)};
+    band 1 is the high-pass (30-399 Hz), band 6 the low-pass (1.4-22 kHz), bands 2-5 take type
+    low_shelf / bell / high_shelf / notch. Values outside Fairlight's ranges are clamped."""
+    v = {EQ_TOUCHED: 1, EQ_ON: 1, EQ_GAIN: int(round(max(-20.0, min(20.0, gain_db)) * 10))}
+    for i, b in enumerate(bands[:6]):
+        f = float(b.get('freq') or (30 if i == 0 else 22000 if i == 5 else 1000))
+        if i == 0:
+            rng = 0
+        elif i == 5:
+            rng = 3
+        else:
+            fits = [k for k, (lo, hi) in enumerate(EQ_RANGES) if lo <= f <= hi] or [0 if f < 30 else 3]
+            rng = min(fits, key=lambda k: abs(math.log(f / math.sqrt(EQ_RANGES[k][0] * EQ_RANGES[k][1]))))
+        lo, hi = EQ_RANGES[rng]
+        f = max(lo, min(hi, f))
+        v[EQ_BAND_FREQ + i] = int(round(f))
+        v[EQ_BAND_RANGE + i] = rng
+        v[EQ_BAND_KNOB + i] = int(round(256 * math.log(f / lo) / math.log(hi / lo)))
+        v[EQ_BAND_ON + i] = 1 if b.get('on') else 0
+        v[EQ_BAND_TYPE + i] = 6 if i == 0 else 5 if i == 5 else EQ_TYPES[b.get('type') or 'bell']
+        if i in (0, 5):
+            sl = b.get('slope') or 12
+            v[EQ_BAND_SLOPE + i] = min(range(4), key=lambda k: abs(EQ_SLOPES[k] - sl))
+        else:
+            v[EQ_BAND_GAIN + i] = int(round(max(-20.0, min(20.0, b.get('gain') or 0.0)) * 10))
+            q = max(0.3, min(10.3, b.get('q') or 1.0))
+            v[EQ_BAND_Q + i] = int(math.floor(q * 15 + 10.5 + 1e-9))
+    return v
+
+
+def raw_model(layout, ntsc=False, reverbs=None, inserts=None, eqs=None):
     """layout: string of 'm' (mono) / 's' (stereo), one char per audio track.
     reverbs: {track index: {Reverb parameter name: normalized value}} -> a Fairlight Reverb insert on that track.
-    inserts: {track index: [reverb_insert(...) / plugin_insert(...), ...]} -> inserts on that track, slot 1, 2, ..."""
+    inserts: {track index: [reverb_insert(...) / plugin_insert(...), ...]} -> inserts on that track, slot 1, 2, ...
+    eqs: {track index: channel_eq(...)} -> the channel EQ of that track."""
+    eqs = eqs or {}
     inserts = {t: (list(v) if isinstance(v, (list, tuple)) else [v]) for t, v in (inserts or {}).items()}
     for t, v in (reverbs or {}).items():
         inserts.setdefault(t, []).append(reverb_insert(v))
@@ -53,7 +96,9 @@ def raw_model(layout, ntsc=False, reverbs=None, inserts=None):
         vid = d['vids'][k]
         vals = []
         for t, r in ch:
-            if vid == 29 and t in inserts:          # insert active on this channel
+            if t in eqs and vid in eqs[t]:
+                vals.append(struct.pack('<i', eqs[t][vid]))
+            elif vid == 29 and t in inserts:          # insert active on this channel
                 vals.append(struct.pack('<I', 1))
             elif vid == 170 and t in inserts and r != 'm':   # (stereo channels with an insert)
                 vals.append(struct.pack('<I', 1))
@@ -234,7 +279,7 @@ def plugin_insert(ident, display, payload=b'', params=(), io=None):
             'record': lambda ch, slot=0: _plugin_record(ch, ident, display, payload, slot)}
 
 
-def qt_blob(layout, ntsc=False, reverbs=None, inserts=None):
+def qt_blob(layout, ntsc=False, reverbs=None, inserts=None, eqs=None):
     """FLStudioModelBA bytes as stored in the Sm2Sequence FieldsBlob (qCompress format)."""
-    raw = raw_model(layout, ntsc, reverbs, inserts)
+    raw = raw_model(layout, ntsc, reverbs, inserts, eqs)
     return struct.pack('>I', len(raw)) + zlib.compress(raw, 9)

@@ -17,7 +17,14 @@
   het spoor, daarna dezelfde 68-byte-parameterrecords als de clip-FX vanaf byte 496), de effectnamentabel
   (`Reverb`, `Reverb:2`, … na `DolbyAtmosRenderer`), de parameternamentabel (`Out 1`, `Out 2`, dan de 25
   Reverb-parameters, id's na de hoogste bestaande) en per kanaal vector 29 = 1 (insert actief; vector 170 = 1
-  voor stereo). Plus slot 0 van tabel 0x4a4 = 1. Zie `flmodel._add_inserts`. EQ op een spoor: nog niet ontcijferd.
+  voor stereo). Plus slot 0 van tabel 0x4a4 = 1. Zie `flmodel._add_inserts`.
+- **EQ van een spoor (kanaal-EQ)**: geen sectie maar per-kanaalvectoren (geijkt door in Resolve 21.1 telkens één
+  instelling te veranderen en te exporteren). Band i (0–5) = vector basis + i: 225 gain (dB × 10), 233 Q
+  (Q × 15 + 10), 241 frequentie (Hz), 249 type (1 low shelf, 2 bell, 3 high shelf, 4 notch; band 1 = 6 high-pass,
+  band 6 = 5 low-pass), 257 aan/uit, 648 bereik (0 L 30–399, 1 ML 100–1500, 2 MH 450–8000, 3 H 1400–22000 Hz;
+  band 1 vast L, band 6 vast H), 820 knopstand (256 × log-positie binnen het bereik), 1214 helling (0–3 = 6, 12,
+  18, 24 dB/oct, alleen band 1 en 6). 223 = EQ aan, 224 = EQ-gain (dB × 10), 170 = 1 zodra de EQ bewerkt is.
+  Zie `flmodel.channel_eq`; EQ3 op een spoor gaat daarheen (`eq3_to_channel_eq`).
 - **Meerdere inserts op één spoor**: één `EffectPresets`-record per instantie, met het insert-vak in **byte 3**
   van de recordkop (0 = vak 1, 1 = vak 2, …; byte 1 blijft het eerste kanaal). Afgelezen uit een Resolve-export
   waarin een Reverb naar vak 2 van een ander spoor was gesleept (`00000001`), en getest in Resolve 21.1: Reverb,
