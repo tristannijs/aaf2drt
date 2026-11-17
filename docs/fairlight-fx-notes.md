@@ -17,7 +17,12 @@
   het spoor, daarna dezelfde 68-byte-parameterrecords als de clip-FX vanaf byte 496), de effectnamentabel
   (`Reverb`, `Reverb:2`, … na `DolbyAtmosRenderer`), de parameternamentabel (`Out 1`, `Out 2`, dan de 25
   Reverb-parameters, id's na de hoogste bestaande) en per kanaal vector 29 = 1 (insert actief; vector 170 = 1
-  voor stereo). Plus slot 0 van tabel 0x4a4 = 1. Zie `flmodel._add_reverbs`. EQ op een spoor: nog niet ontcijferd.
+  voor stereo). Plus slot 0 van tabel 0x4a4 = 1. Zie `flmodel._add_inserts`. EQ op een spoor: nog niet ontcijferd.
+- **Meerdere inserts op één spoor**: één `EffectPresets`-record per instantie, met het insert-vak in **byte 3**
+  van de recordkop (0 = vak 1, 1 = vak 2, …; byte 1 blijft het eerste kanaal). Afgelezen uit een Resolve-export
+  waarin een Reverb naar vak 2 van een ander spoor was gesleept (`00000001`), en getest in Resolve 21.1: Reverb,
+  Place it, Reverb op één spoor komt in vak 1, 2, 3 met elk zijn eigen instellingen. Resolve toont maximaal 6
+  inserts per spoor; een 7de en 8ste worden genegeerd. Vector 29 blijft 1, ook bij meerdere inserts.
 
 ## Reverb (FairlightFX) — genormaliseerd v → Inspector-waarde
 

@@ -486,13 +486,13 @@ def main():
                 elif R == 'clip': pos, align = 1, 1
                 else: pos, align = 3, 3
                 xml.append(gen.ti_transition(tc + it['start'], ln, align, pos))
-        insert = None
-        for pl in t.get('track_plugins') or []:
-            tnotes, done = [], False
+        inserts = []
+        for pl in sorted(t.get('track_plugins') or [], key=lambda q: int(q.get('insert') or 0)):
+            tnotes, done, insert = [], False, None
             avid_own = str(pl.get('manufacturer') or '') == AVID_MANUFACTURER
-            if insert is not None:
-                tnotes.append('%s (insert %s) niet meegenomen: voorlopig wordt alleen het eerste insert-vak gevuld'
-                              % (pl['name'], (pl.get('insert') or 0) + 1))
+            if len(inserts) >= flmodel.MAX_INSERTS:
+                tnotes.append('%s (insert %s) niet meegenomen: Fairlight heeft maar %d insert-vakken per spoor'
+                              % (pl['name'], int(pl.get('insert') or 0) + 1, flmodel.MAX_INSERTS))
             elif pl['name'] == 'D-Verb' and pl.get('chunk'):
                 d = aafmodel.dverb_params(pl['chunk'])
                 if d is not None:
@@ -518,12 +518,14 @@ def main():
                                  'met standaardinstellingen: Avid zet de instellingen van spoor-plugins niet in de AAF'))
             else:
                 tnotes.append('spoor-plugin niet vertaald: %s' % pl['name'])
+            if insert is not None:
+                inserts.append(insert)
             for n_ in tnotes:
                 log('  %s (spoor): %s' % (label, n_))
             report.append({'track': label, 'status': 'track_fx', 'plugin': pl['name'], 'translated': done,
                            'notes': tnotes})
         audio_tracks.append({'name': t['name'], 'subtype': 0 if stereo_track else 1, 'items_xml': xml,
-                             'insert': insert})
+                             'inserts': inserts})
 
     log('Video ...')
     vfields = lambda start: codec.blob_encode(codec.pb_encode([[1, 2, [[1, 2, [[21, 0, start]]], [4, 0, 1], [9, 0, 1]]],

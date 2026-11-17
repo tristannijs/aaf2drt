@@ -33,6 +33,9 @@ De D-Verb-vertaling is een benadering: decay, pre-delay en mix kloppen, kamertyp
 van vergelijkbare afmetingen, diffusion heeft geen equivalent. Fairlight Reverb gaat tot 4 s decay en 200 ms
 pre-delay; langer wordt ingekort (het rapport meldt het). Van een D-Verb op een spoor gaat de input-gain niet mee.
 
+Meerdere plugins op één spoor komen in dezelfde volgorde in de insert-vakken van Fairlight. Fairlight heeft er 6
+per spoor; wat daarboven zit, of wat niet vertaald kan worden, staat in het rapport.
+
 Wil je de instellingen van zo'n spoor-plugin toch meenemen, zet de plugin dan in Avid als real-time AudioSuite op
 de clips in plaats van op het spoor, of bewaar de instelling als preset in de plugin zelf en kies die in Resolve.
 

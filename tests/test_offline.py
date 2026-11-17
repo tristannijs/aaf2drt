@@ -148,3 +148,23 @@ def test_juce_vst3_insert():
     m = flmodel.raw_model('m', inserts={0: flmodel.plugin_insert('vst3:X', 'Plug', d)})
     secs = [s[1] for s in flmodel._sections(m)[0]]
     assert 'EffectPresets' in secs and len(m) > base
+
+
+def test_multiple_track_inserts():
+    """Several inserts on one track: one EffectPresets record per instance, byte 1 = first channel, byte 3 = slot
+    (checked against Resolve 21.1, which shows them in slots 1, 2, 3 with their own settings); max 6 per track."""
+    R = flmodel.reverb_insert
+    P = flmodel.plugin_insert(flmodel.juce_vst3_id(1399090297, 1349280628), 'Place it', flmodel.juce_vst3_state())
+    x = bytes(flmodel.raw_model('ms', inserts={0: [R({'Dry/Wet': 0.2}), P, R({})], 1: [R({})] * 8}))
+    secs, _ = flmodel._sections(x)
+    s = next(q for q in secs if q[1] == 'EffectPresets')
+    body = x[s[0] + 48:s[0] + 48 + s[3]]
+    n = struct.unpack_from('<I', body, 4)[0]
+    assert n == 3 + 6
+    o, heads = 8, []
+    for _ in range(n):
+        _, ln, kind = struct.unpack_from('<III', body, o)
+        heads.append((body[o + 1], body[o + 3], kind))
+        o += 2136 if kind == 2 else 424 + ln
+    assert heads[:3] == [(0, 0, 2), (0, 1, 1), (0, 2, 2)]
+    assert [h[:2] for h in heads[3:]] == [(1, k) for k in range(6)]
